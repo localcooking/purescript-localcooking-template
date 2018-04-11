@@ -1,12 +1,18 @@
 module LocalCooking.Main where
 
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Window (WindowSize)
-import LocalCooking.Auth.Storage (getStoredAuthToken)
+import LocalCooking.Window (WindowSize, widthToWindowSize)
+import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Auth.Error (PreliminaryAuthToken (..))
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..))
-import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, isUserDetailsLink, class ToLocation, class FromLocation, toLocation, fromLocation, pushState', replaceState', onPopState)
+import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, isUserDetailsLink, class ToLocation, class FromLocation, toLocation, fromLocation, pushState', replaceState', onPopState, toDocumentTitle)
+import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues)
+import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Common.AuthToken (AuthToken)
+
+import Sparrow.Client (allocateDependencies, unpackClient)
+import Sparrow.Client.Queue (newSparrowClientQueues, newSparrowStaticClientQueues, sparrowClientQueues, sparrowStaticClientQueues)
+import Sparrow.Types (Topic (..))
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -16,8 +22,10 @@ import Data.URI (URI, Authority (..), Host (NameAddress), Scheme (..), Port (..)
 import Data.URI.Location (Location)
 import Data.String (takeWhile) as String
 import Data.Int.Parse (parseInt, toRadix)
+import Data.UUID (GENUUID)
+import Data.Time.Duration (Milliseconds (..))
 import Control.Monad.Eff (Eff, kind Effect)
-import Control.Monad.Eff.Ref (REF)
+import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Timer (TIMER, setTimeout)
 import Control.Monad.Eff.Exception (EXCEPTION)
@@ -37,21 +45,29 @@ import DOM.HTML.Types (HISTORY)
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import Signal.Internal as Signal
+import Signal.Time (debounce)
+import Signal.DOM (windowDimensions)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Browser.WebStorage (WEB_STORAGE)
+import WebSocket (WEBSOCKET)
+import Network.HTTP.Affjax (AJAX)
 
 
 
 
 type Effects eff =
-  ( ref :: REF
-  , timer :: TIMER
-  , dom :: DOM
-  , history :: HISTORY
-  , console :: CONSOLE
-  , exception :: EXCEPTION
-  , webStorage :: WEB_STORAGE
+  ( ref                :: REF
+  , timer              :: TIMER
+  , dom                :: DOM
+  , history            :: HISTORY
+  , console            :: CONSOLE
+  , exception          :: EXCEPTION
+  , webStorage         :: WEB_STORAGE
+  , uuid               :: GENUUID
+  , ajax               :: AJAX
+  , ws                 :: WEBSOCKET
   , injectTapEvent     :: INJECT_TAP_EVENT
   , set_immediate_shim :: SET_IMMEDIATE_SHIM
   | eff)
@@ -74,7 +90,6 @@ type LocalCookingArgs siteLinks eff =
   , deps :: SparrowClientT eff (Eff eff) Unit
   , env :: Env
   , initSiteLinks :: siteLinks
-  , siteLinksToDocumentTitle :: siteLinks -> DocumentTitle
   }
 
 
@@ -91,7 +106,6 @@ defaultMain
   , content
   , env
   , initSiteLinks
-  , siteLinksToDocumentTitle
   } = do
   injectTapEvent
   _ <- registerShim
@@ -134,7 +148,7 @@ defaultMain
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
               replaceState' (rootLink :: siteLinks) h
-              setDocumentTitle d (siteLinksToDocumentTitle rootLink)
+              setDocumentTitle d $ toDocumentTitle $ rootLink :: siteLinks
               pure rootLink
             | otherwise -> pure x
         _ -> case unit of
@@ -143,14 +157,14 @@ defaultMain
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
               replaceState' (rootLink :: siteLinks) h
-              setDocumentTitle d (siteLinksToDocumentTitle rootLink)
+              setDocumentTitle d $ toDocumentTitle $ rootLink :: siteLinks
               pure rootLink
             | otherwise -> pure x
 
     sig <- IxSignal.make initSiteLink
     flip onPopState w \(siteLink :: siteLinks) -> do
       let continue x = do
-            setDocumentTitle d (siteLinksToDocumentTitle x)
+            setDocumentTitle d (toDocumentTitle x)
             IxSignal.set x sig
       -- Top level redirect for browser back-button - no history change:
       case unit of
@@ -176,101 +190,98 @@ defaultMain
 
     pure sig
 
-  pure unit
-
-  -- -- history driver - write to this to change the page, with history.
-  -- ( siteLinksSignal :: One.Queue (write :: WRITE) (Effects eff) SiteLinks
-  --   ) <- do
-  --   q <- One.newQueue
-  --   One.onQueue q \(siteLink :: siteLinks) -> do
-  --     -- only respect changed pages
-  --     y <- IxSignal.get currentPageSignal
-  --     when (y /= siteLink) $ do
-  --       let continue x = do
-  --             pushState' x h
-  --             setDocumentTitle d (siteLinksToDocumentTitle x)
-  --             IxSignal.set x currentPageSignal
-  --       -- redirect rules
-  --       case unit of
-  --         | siteLink == registerLink -> do
-  --           mAuth <- IxSignal.get authTokenSignal
-  --           case mAuth of
-  --             Nothing -> continue siteLink
-  --             Just _ -> do
-  --               void $ setTimeout 1000 $
-  --                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
-  --               continue rootLink
-  --         | isUserDetailsLink siteLink -> do
-  --           mAuth <- IxSignal.get authTokenSignal
-  --           case mAuth of
-  --             Just _ -> continue siteLink
-  --             Nothing -> do
-  --               void $ setTimeout 1000 $
-  --                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
-  --               continue rootLink
-  --         _ -> continue siteLink
-  --   pure (One.writeOnly q)
+  -- history driver - write to this to change the page, with history.
+  ( siteLinksSignal :: One.Queue (write :: WRITE) (Effects eff) siteLinks
+    ) <- do
+    q <- One.newQueue
+    One.onQueue q \(siteLink :: siteLinks) -> do
+      -- only respect changed pages
+      y <- IxSignal.get currentPageSignal
+      when (y /= siteLink) $ do
+        let continue x = do
+              pushState' x h
+              setDocumentTitle d (toDocumentTitle x)
+              IxSignal.set x currentPageSignal
+        -- redirect rules
+        case unit of
+          _ | siteLink == registerLink -> do
+              mAuth <- IxSignal.get authTokenSignal
+              case mAuth of
+                Nothing -> continue siteLink
+                Just _ -> do
+                  void $ setTimeout 1000 $
+                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+                  continue rootLink
+            | isUserDetailsLink siteLink -> do
+              mAuth <- IxSignal.get authTokenSignal
+              case mAuth of
+                Just _ -> continue siteLink
+                Nothing -> do
+                  void $ setTimeout 1000 $
+                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                  continue rootLink
+            | otherwise -> continue siteLink
+    pure (One.writeOnly q)
 
 
-  -- onceRef <- newRef false
-  -- -- rediect for async logouts
-  -- let redirectOnAuth mAuth = do
-  --       siteLink <- IxSignal.get currentPageSignal
-  --       let continue = One.putQueue siteLinksSignal rootLink
-  --       case mAuth of
-  --         Nothing -> do
-  --           -- hack for listening to the signal the first time on bind
-  --           once <- do
-  --             x <- readRef onceRef
-  --             writeRef onceRef true
-  --             pure x
-  --           when once $ case siteLink of
-  --             UserDetailsLink _ -> do
-  --               void $ setTimeout 1000 $
-  --                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
-  --               continue
-  --             _ -> pure unit
-  --         Just _ -> case siteLink of
-  --           RegisterLink -> do
-  --             void $ setTimeout 1000 $
-  --               One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
-  --             continue
-  --           _ -> pure unit
-  -- IxSignal.subscribe redirectOnAuth authTokenSignal
+  onceRef <- newRef false
+  -- rediect for async logouts
+  let redirectOnAuth mAuth = do
+        siteLink <- IxSignal.get currentPageSignal
+        let continue = One.putQueue siteLinksSignal rootLink
+        case mAuth of
+          Nothing -> do
+            -- hack for listening to the signal the first time on bind
+            once <- do
+              x <- readRef onceRef
+              writeRef onceRef true
+              pure x
+            when once $ case unit of
+              _ | isUserDetailsLink siteLink -> do
+                  void $ setTimeout 1000 $
+                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                  continue
+                | otherwise -> pure unit
+          Just _ -> case unit of
+            _ | siteLink == registerLink -> do
+                void $ setTimeout 1000 $
+                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+                continue
+              | otherwise -> pure unit
+  IxSignal.subscribe redirectOnAuth authTokenSignal
 
-  -- -- auth token storage and clearing on site-wide driven changes
-  -- let localstorageOnAuth mAuth = case mAuth of
-  --       Nothing -> clearAuthToken
-  --       Just authToken -> storeAuthToken authToken
-  -- IxSignal.subscribe localstorageOnAuth authTokenSignal
-
-
-  -- windowSizeSignal <- do
-  --   -- debounces and only relays when the window size changes
-  --   sig <- debounce (Milliseconds 100.0) =<< windowDimensions
-  --   initWidth <- (\w' -> w'.w) <$> Signal.get sig
-  --   windowWidthRef <- newRef initWidth
-  --   let initWindowSize = widthToWindowSize initWidth
-  --   out <- IxSignal.make initWindowSize
-  --   flip Signal.subscribe sig \w' -> do
-  --     lastWindowWidth <- readRef windowWidthRef
-  --     when (w'.w /= lastWindowWidth) $ do
-  --       writeRef windowWidthRef w'.w
-  --       let size = widthToWindowSize w'.w
-  --       IxSignal.set size out
-  --   pure out
+  -- auth token storage and clearing on site-wide driven changes
+  let localstorageOnAuth mAuth = case mAuth of
+        Nothing -> clearAuthToken
+        Just authToken -> storeAuthToken authToken
+  IxSignal.subscribe localstorageOnAuth authTokenSignal
 
 
+  windowSizeSignal <- do
+    -- debounces and only relays when the window size changes
+    sig <- debounce (Milliseconds 100.0) =<< windowDimensions
+    initWidth <- (\w' -> w'.w) <$> Signal.get sig
+    windowWidthRef <- newRef initWidth
+    let initWindowSize = widthToWindowSize initWidth
+    out <- IxSignal.make initWindowSize
+    flip Signal.subscribe sig \w' -> do
+      lastWindowWidth <- readRef windowWidthRef
+      when (w'.w /= lastWindowWidth) $ do
+        writeRef windowWidthRef w'.w
+        let size = widthToWindowSize w'.w
+        IxSignal.set size out
+    pure out
 
-  -- -- Sparrow dependencies
-  -- ( authTokenQueues :: AuthTokenSparrowClientQueues (Effects eff)
-  --   ) <- newSparrowClientQueues
-  -- ( registerQueues :: RegisterSparrowClientQueues (Effects eff)
-  --   ) <- newSparrowStaticClientQueues
-  -- allocateDependencies (scheme == Just (Scheme "https")) authority $ do
-  --   unpackClient (Topic ["authToken"]) (sparrowClientQueues authTokenQueues)
-  --   unpackClient (Topic ["register"]) (sparrowStaticClientQueues registerQueues)
-  --   deps
+
+  -- Sparrow dependencies
+  ( authTokenQueues :: AuthTokenSparrowClientQueues (Effects eff)
+    ) <- newSparrowClientQueues
+  ( registerQueues :: RegisterSparrowClientQueues (Effects eff)
+    ) <- newSparrowStaticClientQueues
+  allocateDependencies (scheme == Just (Scheme "https")) authority $ do
+    unpackClient (Topic ["authToken"]) (sparrowClientQueues authTokenQueues)
+    unpackClient (Topic ["register"]) (sparrowStaticClientQueues registerQueues)
+    deps
 
 
 
