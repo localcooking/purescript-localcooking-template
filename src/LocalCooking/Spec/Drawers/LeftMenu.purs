@@ -12,6 +12,7 @@ import Data.URI (URI)
 import Data.URI.Location (Location)
 import Data.Time.Duration (Milliseconds (..))
 import Data.DateTime.Instant (unInstant)
+import Text.Email.Validate (EmailAddress)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafeCoerceEff, unsafePerformEff)
@@ -69,11 +70,13 @@ spec :: forall eff siteLinks
         , toURI :: Location -> URI
         , currentPageSignal :: IxSignal (Effects eff) siteLinks
         , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+        , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
         , buttons :: { toURI :: Location -> URI
                       , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                       , currentPageSignal :: IxSignal (Effects eff) siteLinks
                       , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                       , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                      , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
                       } -> Array R.ReactElement
         }
      -> T.Spec (Effects eff) State Unit (Action siteLinks)
@@ -82,6 +85,7 @@ spec
   , windowSizeSignal
   , currentPageSignal
   , authTokenSignal
+  , userEmailSignal
   , toURI
   , buttons
   } = T.simpleSpec performAction render
@@ -130,7 +134,14 @@ spec
                 { primary: "About"
                 }
               ]
-          ] <> buttons {toURI,siteLinks,currentPageSignal,windowSizeSignal,authTokenSignal}
+          ] <> buttons
+               { toURI
+               , siteLinks
+               , currentPageSignal
+               , windowSizeSignal
+               , authTokenSignal
+               , userEmailSignal
+               }
         ]
       ]
 
@@ -143,11 +154,13 @@ leftMenu :: forall eff siteLinks
             , toURI :: Location -> URI
             , currentPageSignal :: IxSignal (Effects eff) siteLinks
             , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+            , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
             , buttons :: { toURI :: Location -> URI
                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                         , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
                          } -> Array R.ReactElement
             }
          -> R.ReactElement
@@ -158,6 +171,7 @@ leftMenu
   , windowSizeSignal
   , currentPageSignal
   , authTokenSignal
+  , userEmailSignal
   , buttons
   } =
   let init =
@@ -166,7 +180,14 @@ leftMenu
       {spec: reactSpec, dispatcher} =
         T.createReactSpec
           ( spec
-            {siteLinks,toURI,windowSizeSignal,currentPageSignal,authTokenSignal,buttons}
+            { siteLinks
+            , toURI
+            , windowSizeSignal
+            , currentPageSignal
+            , authTokenSignal
+            , userEmailSignal
+            , buttons
+            }
           )
           (initialState init)
       reactSpecLogin =

@@ -9,6 +9,7 @@ import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..))
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, isUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, toDocumentTitle)
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
+import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
 import LocalCooking.Common.AuthToken (AuthToken)
 
 import Sparrow.Client (allocateDependencies, unpackClient)
@@ -26,6 +27,7 @@ import Data.Int.Parse (parseInt, toRadix)
 import Data.UUID (GENUUID)
 import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
+import Text.Email.Validate (EmailAddress)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
 import Control.Monad.Eff.Console (CONSOLE, log)
@@ -86,6 +88,7 @@ type LocalCookingArgs siteLinks eff =
                , siteLinks :: siteLinks -> Eff eff Unit
                , toURI :: Location -> URI
                , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+               , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
                } -> Array ReactElement
   , topbar ::
     { imageSrc :: Location
@@ -94,6 +97,7 @@ type LocalCookingArgs siteLinks eff =
                  , currentPageSignal :: IxSignal eff siteLinks
                  , windowSizeSignal :: IxSignal eff WindowSize
                  , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+                 , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
                  } -> Array ReactElement
     }
   , leftDrawer ::
@@ -102,6 +106,7 @@ type LocalCookingArgs siteLinks eff =
                  , currentPageSignal :: IxSignal eff siteLinks
                  , windowSizeSignal :: IxSignal eff WindowSize
                  , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+                 , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
                  } -> Array ReactElement
     }
   , deps :: SparrowClientT eff (Eff eff) Unit
@@ -298,9 +303,12 @@ defaultMain
     ) <- newSparrowClientQueues
   ( registerQueues :: RegisterSparrowClientQueues (Effects eff)
     ) <- newSparrowStaticClientQueues
+  ( userEmailQueues :: UserEmailSparrowClientQueues (Effects eff)
+    ) <- newSparrowStaticClientQueues
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
     unpackClient (Topic ["authToken"]) (sparrowClientQueues authTokenQueues)
     unpackClient (Topic ["register"]) (sparrowStaticClientQueues registerQueues)
+    unpackClient (Topic ["userEmail"]) (sparrowStaticClientQueues userEmailQueues)
     deps
 
 
@@ -318,6 +326,7 @@ defaultMain
           , authTokenSignal
           , authTokenQueues
           , registerQueues
+          , userEmailQueues
           , templateArgs: {content,topbar,leftDrawer,palette}
           , env
           }

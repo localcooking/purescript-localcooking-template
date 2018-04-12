@@ -4,7 +4,7 @@ import LocalCooking.Spec.Topbar (topbar)
 import LocalCooking.Spec.Content.Register (register)
 import LocalCooking.Spec.Dialogs.Login (loginDialog)
 import LocalCooking.Spec.Drawers.LeftMenu (leftMenu)
-import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..))
+import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..), UserEmailError (..))
 import LocalCooking.Spec.Flags.USA (usaFlag, usaFlagViewBox)
 import LocalCooking.Spec.Flags.Colorado (coloradoFlag, coloradoFlagViewBox)
 import LocalCooking.Window (WindowSize (Laptop))
@@ -17,6 +17,7 @@ import LocalCooking.Client.Dependencies.AuthToken
   , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaOut (..)
   )
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
+import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitIn (..), UserEmailInitOut (..))
 
 import Sparrow.Client.Queue (callSparrowClientQueues)
 
@@ -26,6 +27,7 @@ import Data.URI.Location (Location)
 import Data.UUID (GENUUID)
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
+import Text.Email.Validate (EmailAddress)
 import Control.Monad.Aff (makeAff, nonCanceler)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
@@ -56,6 +58,7 @@ import Crypto.Scrypt (SCRYPT)
 
 import Queue (READ, WRITE)
 import Queue.One as One
+import Queue.One.Aff as OneIO
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 
@@ -107,15 +110,18 @@ spec :: forall eff siteLinks
         , development        :: Boolean
         , authTokenQueues    :: AuthTokenSparrowClientQueues (Effects eff)
         , registerQueues     :: RegisterSparrowClientQueues (Effects eff)
+        , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
         , errorMessageQueue  :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
         , loginPendingSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
         , authTokenSignal    :: IxSignal (Effects eff) (Maybe AuthToken)
+        , userEmailSignal    :: IxSignal (Effects eff) (Maybe EmailAddress)
         , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                        , currentPageSignal :: IxSignal (Effects eff) siteLinks
                        , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                       , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
                        } -> Array R.ReactElement
           , topbar ::
             { imageSrc :: Location
@@ -124,6 +130,7 @@ spec :: forall eff siteLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
                           } -> Array R.ReactElement
             }
           , leftDrawer ::
@@ -132,6 +139,7 @@ spec :: forall eff siteLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
                           } -> Array R.ReactElement
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
@@ -147,9 +155,11 @@ spec
   , development
   , authTokenQueues
   , registerQueues
+  , userEmailQueues
   , errorMessageQueue
   , loginPendingSignal
   , authTokenSignal
+  , userEmailSignal
   , templateArgs: templateArgs@{palette,content}
   , env
   } = T.simpleSpec performAction render
@@ -172,23 +182,22 @@ spec
             Just {initOut,deltaIn: _,unsubscribe} -> case initOut of -- TODO logging out directly pushes a DeltaOut to the sparrowClientQueues, to automatically clean up dangling listeners
               AuthTokenInitOutSuccess authToken -> do
                 IxSignal.set (Just authToken) authTokenSignal
-                -- fetch user details
-                -- FIXME users should just use authTokenSignal
-                -- case initIn of
-                --   AuthTokenInitInLogin {email} ->
-                --     IxSignal.set (Just {email}) userDetailsSignal
-                --   AuthTokenInitInExists _ ->
-                --     OneIO.callAsyncEff userDetailsQueues.emailQueues
-                --       (\mInitOut -> case mInitOut of
-                --           Nothing ->
-                --             One.putQueue errorMessageQueue (SnackbarMessageUserDetails UserDetailsEmailNoInitOut)
-                --           Just initOut -> case initOut of
-                --             UserDetailsEmailInitOutSuccess email ->
-                --               IxSignal.set (Just {email}) userDetailsSignal
-                --             UserDetailsEmailInitOutNoAuth ->
-                --               One.putQueue errorMessageQueue (SnackbarMessageUserDetails UserDetailsEmailNoAuth)
-                --       )
-                --       (UserDetailsEmailInitIn authToken)
+                -- fetch user email
+                case initIn of
+                  AuthTokenInitInLogin {email} ->
+                    IxSignal.set (Just email) userEmailSignal
+                  AuthTokenInitInExists _ ->
+                    OneIO.callAsyncEff userEmailQueues
+                      (\mInitOut -> case mInitOut of
+                          Nothing ->
+                            One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
+                          Just initOut -> case initOut of
+                            UserEmailInitOutSuccess email ->
+                              IxSignal.set (Just email) userEmailSignal
+                            UserEmailInitOutNoAuth ->
+                              One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth)
+                      )
+                      (UserEmailInitIn authToken)
               AuthTokenInitOutFailure e -> do
                 unsubscribe
                 IxSignal.set Nothing authTokenSignal
@@ -206,6 +215,7 @@ spec
         , mobileMenuButtonSignal: One.writeOnly mobileMenuButtonSignal
         , currentPageSignal
         , authTokenSignal
+        , userEmailSignal
         , imageSrc: templateArgs.topbar.imageSrc
         , buttons: templateArgs.topbar.buttons
         }
@@ -229,6 +239,7 @@ spec
         , windowSizeSignal
         , authTokenSignal
         , currentPageSignal
+        , userEmailSignal
         , buttons: templateArgs.leftDrawer.buttons
         }
       , messages
@@ -285,6 +296,7 @@ spec
                           , currentPageSignal
                           , windowSizeSignal
                           , authTokenSignal
+                          , userEmailSignal
                           , toURI
                           }
             ]
@@ -332,12 +344,14 @@ app :: forall eff siteLinks
        , authTokenSignal      :: IxSignal (Effects eff) (Maybe AuthToken)
        , authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
        , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
+       , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
        , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                        , currentPageSignal :: IxSignal (Effects eff) siteLinks
                        , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                       , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
                        } -> Array R.ReactElement
           , topbar ::
             { imageSrc :: Location
@@ -346,6 +360,7 @@ app :: forall eff siteLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
                           } -> Array R.ReactElement
             }
           , leftDrawer ::
@@ -354,6 +369,7 @@ app :: forall eff siteLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
                           } -> Array R.ReactElement
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
@@ -374,6 +390,7 @@ app
   , authTokenSignal
   , authTokenQueues
   , registerQueues
+  , userEmailQueues
   , templateArgs
   , env
   } =
@@ -392,8 +409,10 @@ app
           , errorMessageQueue
           , authTokenQueues
           , registerQueues
+          , userEmailQueues
           , loginPendingSignal
           , authTokenSignal
+          , userEmailSignal
           , templateArgs
           , env
           }
@@ -425,3 +444,6 @@ app
   where
     loginPendingSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
     loginPendingSignal = unsafePerformEff One.newQueue
+
+    userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+    userEmailSignal = unsafePerformEff (IxSignal.make Nothing)

@@ -31,13 +31,13 @@ import Queue.One as One
 
 
 
-data UserDetailsError
-  = UserDetailsEmailNoInitOut
-  | UserDetailsEmailNoAuth
+data UserEmailError
+  = UserEmailNoInitOut
+  | UserEmailNoAuth
 
-derive instance genericUserDetailsError :: Generic UserDetailsError
+derive instance genericUserEmailError :: Generic UserEmailError
 
-instance showUserDetailsError :: Show UserDetailsError where
+instance showUserEmailError :: Show UserEmailError where
   show = gShow
 
 
@@ -64,7 +64,7 @@ instance showRedirectError :: Show RedirectError where
 data SnackbarMessage
   = SnackbarMessageAuthFailure AuthTokenFailure
   | SnackbarMessageAuthError AuthError
-  | SnackbarMessageUserDetails UserDetailsError
+  | SnackbarMessageUserEmail UserEmailError
   | SnackbarMessageRegister (Maybe RegisterError)
   | SnackbarMessageRedirect RedirectError
 
@@ -133,9 +133,9 @@ spec = T.simpleSpec performAction render
                   FBLoginReturnBadParse -> R.text "Internal error: Facebook login return unparsable."
                   FBLoginReturnNoUser -> R.text "Facebook user not recognized, please link your account."
                   AuthExistsFailure -> R.text "Warning: You've been logged out; your session expired."
-                SnackbarMessageUserDetails userDetails -> case userDetails of
-                  UserDetailsEmailNoInitOut -> R.text "Internal Error: userDetails/email resource failed"
-                  UserDetailsEmailNoAuth -> R.text "Error: No authorization for email"
+                SnackbarMessageUserEmail userEmail -> case userEmail of
+                  UserEmailNoInitOut -> R.text "Internal Error: userEmail resource failed"
+                  UserEmailNoAuth -> R.text "Error: No authorization for email"
                 SnackbarMessageRegister mRegister -> case mRegister of
                   Nothing -> R.text "Registered! Please check your spam folder and confirm in 7 days."
                   Just register -> case register of
