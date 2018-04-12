@@ -115,6 +115,7 @@ spec :: forall eff siteLinks
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                        , currentPageSignal :: IxSignal (Effects eff) siteLinks
                        , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                       , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                        } -> Array R.ReactElement
           , topbar ::
             { imageSrc :: Location
@@ -122,6 +123,7 @@ spec :: forall eff siteLinks
                           , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                           } -> Array R.ReactElement
             }
           , leftDrawer ::
@@ -129,6 +131,7 @@ spec :: forall eff siteLinks
                           , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                           } -> Array R.ReactElement
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
@@ -202,6 +205,7 @@ spec
         , siteLinks
         , mobileMenuButtonSignal: One.writeOnly mobileMenuButtonSignal
         , currentPageSignal
+        , authTokenSignal
         , imageSrc: templateArgs.topbar.imageSrc
         , buttons: templateArgs.topbar.buttons
         }
@@ -221,8 +225,9 @@ spec
       , leftMenu
         { mobileDrawerOpenSignal: One.readOnly mobileMenuButtonSignal
         , siteLinks
-        , windowSizeSignal
         , toURI
+        , windowSizeSignal
+        , authTokenSignal
         , currentPageSignal
         , buttons: templateArgs.leftDrawer.buttons
         }
@@ -279,6 +284,7 @@ spec
                           { siteLinks
                           , currentPageSignal
                           , windowSizeSignal
+                          , authTokenSignal
                           , toURI
                           }
             ]
@@ -331,6 +337,7 @@ app :: forall eff siteLinks
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                        , currentPageSignal :: IxSignal (Effects eff) siteLinks
                        , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                       , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                        } -> Array R.ReactElement
           , topbar ::
             { imageSrc :: Location
@@ -338,6 +345,7 @@ app :: forall eff siteLinks
                           , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                           } -> Array R.ReactElement
             }
           , leftDrawer ::
@@ -345,6 +353,7 @@ app :: forall eff siteLinks
                           , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                           } -> Array R.ReactElement
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}

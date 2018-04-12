@@ -2,6 +2,7 @@ module LocalCooking.Spec.Drawers.LeftMenu where
 
 import LocalCooking.Window (WindowSize)
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink)
+import LocalCooking.Common.AuthToken (AuthToken)
 
 import Prelude
 import Data.Tuple (Tuple (..))
@@ -67,14 +68,23 @@ spec :: forall eff siteLinks
         , windowSizeSignal :: IxSignal (Effects eff) WindowSize
         , toURI :: Location -> URI
         , currentPageSignal :: IxSignal (Effects eff) siteLinks
+        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
         , buttons :: { toURI :: Location -> URI
                       , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                       , currentPageSignal :: IxSignal (Effects eff) siteLinks
                       , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                      , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                       } -> Array R.ReactElement
         }
      -> T.Spec (Effects eff) State Unit (Action siteLinks)
-spec {siteLinks,windowSizeSignal,currentPageSignal,toURI,buttons} = T.simpleSpec performAction render
+spec
+  { siteLinks
+  , windowSizeSignal
+  , currentPageSignal
+  , authTokenSignal
+  , toURI
+  , buttons
+  } = T.simpleSpec performAction render
   where
     lastOpen = unsafePerformEff (newRef Nothing)
 
@@ -120,7 +130,7 @@ spec {siteLinks,windowSizeSignal,currentPageSignal,toURI,buttons} = T.simpleSpec
                 { primary: "About"
                 }
               ]
-          ] <> buttons {toURI,siteLinks,currentPageSignal,windowSizeSignal}
+          ] <> buttons {toURI,siteLinks,currentPageSignal,windowSizeSignal,authTokenSignal}
         ]
       ]
 
@@ -132,10 +142,12 @@ leftMenu :: forall eff siteLinks
             , windowSizeSignal :: IxSignal (Effects eff) WindowSize
             , toURI :: Location -> URI
             , currentPageSignal :: IxSignal (Effects eff) siteLinks
+            , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
             , buttons :: { toURI :: Location -> URI
                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                         , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                          } -> Array R.ReactElement
             }
          -> R.ReactElement
@@ -145,6 +157,7 @@ leftMenu
   , toURI
   , windowSizeSignal
   , currentPageSignal
+  , authTokenSignal
   , buttons
   } =
   let init =
@@ -153,7 +166,7 @@ leftMenu
       {spec: reactSpec, dispatcher} =
         T.createReactSpec
           ( spec
-            {siteLinks,toURI,windowSizeSignal,currentPageSignal,buttons}
+            {siteLinks,toURI,windowSizeSignal,currentPageSignal,authTokenSignal,buttons}
           )
           (initialState init)
       reactSpecLogin =

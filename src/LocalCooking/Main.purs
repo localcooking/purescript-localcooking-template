@@ -85,6 +85,7 @@ type LocalCookingArgs siteLinks eff =
                , windowSizeSignal :: IxSignal eff WindowSize
                , siteLinks :: siteLinks -> Eff eff Unit
                , toURI :: Location -> URI
+               , authTokenSignal :: IxSignal eff (Maybe AuthToken)
                } -> Array ReactElement
   , topbar ::
     { imageSrc :: Location
@@ -92,6 +93,7 @@ type LocalCookingArgs siteLinks eff =
                  , siteLinks :: siteLinks -> Eff eff Unit
                  , currentPageSignal :: IxSignal eff siteLinks
                  , windowSizeSignal :: IxSignal eff WindowSize
+                 , authTokenSignal :: IxSignal eff (Maybe AuthToken)
                  } -> Array ReactElement
     }
   , leftDrawer ::
@@ -99,6 +101,7 @@ type LocalCookingArgs siteLinks eff =
                  , siteLinks :: siteLinks -> Eff eff Unit
                  , currentPageSignal :: IxSignal eff siteLinks
                  , windowSizeSignal :: IxSignal eff WindowSize
+                 , authTokenSignal :: IxSignal eff (Maybe AuthToken)
                  } -> Array ReactElement
     }
   , deps :: SparrowClientT eff (Eff eff) Unit

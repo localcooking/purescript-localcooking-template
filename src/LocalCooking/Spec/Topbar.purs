@@ -2,6 +2,7 @@ module LocalCooking.Spec.Topbar where
 
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation, toLocation, rootLink, isUserDetailsLink, userDetailsLink)
 import LocalCooking.Window (WindowSize (..))
+import LocalCooking.Common.AuthToken (AuthToken)
 
 import Prelude
 import Data.URI (URI)
@@ -79,11 +80,13 @@ spec :: forall eff siteLinks
         , mobileMenuButtonSignal :: Queue (write :: WRITE) (Effects eff) Unit
         , windowSizeSignal :: IxSignal (Effects eff) WindowSize
         , currentPageSignal :: IxSignal (Effects eff) siteLinks
+        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
         , imageSrc :: Location
         , buttons :: { toURI :: Location -> URI
                       , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                       , currentPageSignal :: IxSignal (Effects eff) siteLinks
                       , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                      , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                       } -> Array R.ReactElement
         }
      -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
@@ -94,6 +97,7 @@ spec
   , mobileMenuButtonSignal
   , windowSizeSignal
   , currentPageSignal
+  , authTokenSignal
   , imageSrc
   , buttons
   } = T.simpleSpec performAction render
@@ -133,7 +137,7 @@ spec
                   _ | state.currentPage == rootLink -> Button.flat
                     | otherwise -> Button.raised
                 } [R.text "About"]
-              ] <> buttons {siteLinks, toURI, currentPageSignal, windowSizeSignal}
+              ] <> buttons {siteLinks,toURI,currentPageSignal,windowSizeSignal,authTokenSignal}
           ) <>
           [ R.div [RP.style {flex: 1, display: "flex", flexDirection: "row-reverse"}] $ case state.userDetails of
                Nothing ->
@@ -165,12 +169,14 @@ topbar :: forall eff siteLinks
           , mobileMenuButtonSignal :: Queue (write :: WRITE) (Effects eff) Unit
           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
           , currentPageSignal :: IxSignal (Effects eff) siteLinks
+          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
           , siteLinks :: siteLinks -> Eff (Effects eff) Unit
           , imageSrc :: Location
           , buttons :: { toURI :: Location -> URI
                         , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                         , currentPageSignal :: IxSignal (Effects eff) siteLinks
                         , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                         } -> Array R.ReactElement
           } -> R.ReactElement
 topbar
@@ -180,6 +186,7 @@ topbar
   , siteLinks
   , mobileMenuButtonSignal
   , currentPageSignal
+  , authTokenSignal
   , imageSrc
   , buttons
   } =
@@ -194,6 +201,7 @@ topbar
           , siteLinks
           , currentPageSignal
           , windowSizeSignal
+          , authTokenSignal
           , mobileMenuButtonSignal
           , imageSrc
           , buttons
