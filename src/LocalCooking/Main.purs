@@ -1,11 +1,12 @@
 module LocalCooking.Main where
 
+import LocalCooking.Spec (app)
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Window (WindowSize, widthToWindowSize)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Auth.Error (PreliminaryAuthToken (..))
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..))
-import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, isUserDetailsLink, class ToLocation, class FromLocation, toLocation, fromLocation, pushState', replaceState', onPopState, toDocumentTitle)
+import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, isUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, toDocumentTitle)
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Common.AuthToken (AuthToken)
@@ -19,29 +20,33 @@ import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple (..))
 import Data.Either (Either (..))
 import Data.URI (URI, Authority (..), Host (NameAddress), Scheme (..), Port (..))
-import Data.URI.Location (Location)
+import Data.URI.Location (Location, toURI)
 import Data.String (takeWhile) as String
 import Data.Int.Parse (parseInt, toRadix)
 import Data.UUID (GENUUID)
+import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Timer (TIMER, setTimeout)
+import Control.Monad.Eff.Now (NOW)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Execution.Immediate (SET_IMMEDIATE_SHIM, registerShim)
 
 import Sparrow.Client.Types (SparrowClientT)
 import React (ReactElement)
+import React as R
+import ReactDOM (render)
 import MaterialUI.InjectTapEvent (INJECT_TAP_EVENT, injectTapEvent)
+import MaterialUI.MuiThemeProvider (ColorPalette)
 import DOM (DOM)
 import DOM.HTML (window)
 import DOM.HTML.Window (location, document, history)
 import DOM.HTML.Location (hostname, protocol, port)
-import DOM.HTML.History (DocumentTitle)
 import DOM.HTML.Document (body)
 import DOM.HTML.Document.Extra (setDocumentTitle)
-import DOM.HTML.Types (HISTORY)
+import DOM.HTML.Types (HISTORY, htmlElementToElement)
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
@@ -53,7 +58,7 @@ import Queue.One as One
 import Browser.WebStorage (WEB_STORAGE)
 import WebSocket (WEBSOCKET)
 import Network.HTTP.Affjax (AJAX)
-
+import Crypto.Scrypt (SCRYPT)
 
 
 
@@ -61,6 +66,8 @@ type Effects eff =
   ( ref                :: REF
   , timer              :: TIMER
   , dom                :: DOM
+  , now                :: NOW
+  , scrypt             :: SCRYPT
   , history            :: HISTORY
   , console            :: CONSOLE
   , exception          :: EXCEPTION
@@ -87,9 +94,17 @@ type LocalCookingArgs siteLinks eff =
                  , windowSizeSignal :: IxSignal eff WindowSize
                  } -> Array ReactElement
     }
+  , leftDrawer ::
+    { buttons :: { toURI :: Location -> URI
+                 , siteLinks :: siteLinks -> Eff eff Unit
+                 , currentPageSignal :: IxSignal eff siteLinks
+                 , windowSizeSignal :: IxSignal eff WindowSize
+                 } -> Array ReactElement
+    }
   , deps :: SparrowClientT eff (Eff eff) Unit
   , env :: Env
   , initSiteLinks :: siteLinks
+  , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
   }
 
 
@@ -103,9 +118,11 @@ defaultMain :: forall siteLinks eff
 defaultMain
   { deps
   , topbar
+  , leftDrawer
   , content
   , env
   , initSiteLinks
+  , palette
   } = do
   injectTapEvent
   _ <- registerShim
@@ -284,23 +301,23 @@ defaultMain
     deps
 
 
-
   -- Run User Interface
-  -- let props = unit
-  --     {spec: reactSpec, dispatcher} =
-  --       app
-  --         { toURI : \location -> toURI {scheme, authority: Just authority, location}
-  --         , windowSizeSignal
-  --         , currentPageSignal
-  --         , siteLinks: One.putQueue siteLinksSignal
-  --         , development: env.development
-  --         , preliminaryAuthToken
-  --         , errorMessageQueue
-  --         , authTokenSignal
-  --         , authTokenQueues
-  --         , registerQueues
-  --         , templateArgs: {content,topbar}
-  --         }
-  --     component = R.createClass reactSpec
-  -- traverse_ (render (R.createFactory component props) <<< htmlElementToElement) =<< body d
+  let props = unit
+      {spec: reactSpec, dispatcher} =
+        app
+          { toURI : \location -> toURI {scheme, authority: Just authority, location}
+          , windowSizeSignal
+          , currentPageSignal
+          , siteLinks: One.putQueue siteLinksSignal
+          , development: env.development
+          , preliminaryAuthToken
+          , errorMessageQueue
+          , authTokenSignal
+          , authTokenQueues
+          , registerQueues
+          , templateArgs: {content,topbar,leftDrawer,palette}
+          , env
+          }
+      component = R.createClass reactSpec
+  traverse_ (render (R.createFactory component props) <<< htmlElementToElement) =<< body d
 

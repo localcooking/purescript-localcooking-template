@@ -12,7 +12,6 @@ import React.Queue.WhileMounted as Queue
 import Data.Nullable (toNullable)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Maybe (Maybe (..))
-import Data.Either (Either (..))
 import Data.Array as Array
 import Data.Generic (class Generic, gShow)
 import Control.Monad.Base (liftBase)

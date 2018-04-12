@@ -3,12 +3,12 @@ module LocalCooking.Client.Dependencies.Register where
 import LocalCooking.Common.Password (HashedPassword)
 import Google.ReCaptcha (ReCaptchaResponse)
 
-import Prelude (bind, (<$>), unit, (==), pure, otherwise, class Eq, class Show)
+import Prelude
 
 import Sparrow.Client.Queue (SparrowStaticClientQueues)
 import Text.Email.Validate (EmailAddress)
-import Data.Generic (class Generic, gEq, gShow)
-import Data.Argonaut (class EncodeJson, class DecodeJson, encodeJson, decodeJson, fail, (:=), (~>), jsonEmptyObject, (.?))
+import Data.Generic (class Generic, gShow)
+import Data.Argonaut (class EncodeJson, class DecodeJson, decodeJson, fail, (:=), (~>), jsonEmptyObject, (.?))
 import Control.Alternative ((<|>))
 import Text.Email.Validate as Email
 

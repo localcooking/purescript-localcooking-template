@@ -1,7 +1,7 @@
 module LocalCooking.Links.Class where
 
 import Prelude
-import Data.URI.Location (Location (..), fromURI, printLocation, parseLocation)
+import Data.URI.Location (Location, printLocation, parseLocation)
 import Data.URI.Location as Location
 import Data.Either (Either (..))
 import Data.Foreign (toForeign, unsafeFromForeign)
@@ -11,7 +11,7 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Exception (EXCEPTION, throw)
 import Control.Monad.Eff.Uncurried (mkEffFn1, runEffFn2)
 import DOM (DOM)
-import DOM.HTML.History (DocumentTitle (..), pushState, replaceState, URL (..))
+import DOM.HTML.History (DocumentTitle, pushState, replaceState, URL (..))
 import DOM.HTML.Window.Extra (onPopStateImpl)
 import DOM.HTML.Types (History, HISTORY, Window)
 
