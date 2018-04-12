@@ -140,9 +140,7 @@ spec
                     preventDefault e
                     dispatch $ Clicked $ rootLink :: siteLinks
                 , href: URI.print $ toURI $ toLocation $ rootLink :: siteLinks
-                , variant: case unit of
-                  _ | state.currentPage == rootLink -> Button.flat
-                    | otherwise -> Button.raised
+                , variant: Button.flat
                 } [R.text "About"]
               ] <> buttons
                      { siteLinks
