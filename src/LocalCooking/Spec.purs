@@ -5,7 +5,7 @@ import LocalCooking.Spec.Content.Register (register)
 import LocalCooking.Spec.Content.UserDetails.Security (security)
 import LocalCooking.Spec.Dialogs.Login (loginDialog)
 import LocalCooking.Spec.Drawers.LeftMenu (leftMenu)
-import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..), UserEmailError (..))
+import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..), UserEmailError (..), RedirectError (RedirectLogout))
 import LocalCooking.Spec.Flags.USA (usaFlag, usaFlagViewBox)
 import LocalCooking.Spec.Flags.Colorado (coloradoFlag, coloradoFlagViewBox)
 import LocalCooking.Window (WindowSize (Laptop))
@@ -195,7 +195,10 @@ spec
     performAction action props state = case action of
       ChangedCurrentPage p -> void $ T.cotransform _ { currentPage = p }
       ChangedWindowSize p -> void $ T.cotransform _ { windowSize = p }
-      Logout -> liftEff $ One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
+      Logout -> liftEff $ do
+        One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
+        One.putQueue errorMessageQueue $ SnackbarMessageRedirect RedirectLogout
+        siteLinks rootLink
       -- Mapping between programmatic authToken signal and UI shared state & error signaling
       GotAuthToken mToken -> void $ T.cotransform _ { authToken = mToken }
       CallAuthToken initIn -> do

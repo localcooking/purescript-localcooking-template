@@ -54,6 +54,7 @@ instance showRegisterError :: Show RegisterError where
 data RedirectError
   = RedirectRegisterAuth
   | RedirectUserDetailsNoAuth
+  | RedirectLogout
 
 derive instance genericRedirectError :: Generic RedirectError
 
@@ -144,6 +145,7 @@ spec = T.simpleSpec performAction render
                 SnackbarMessageRedirect redirect -> case redirect of
                   RedirectRegisterAuth -> R.text "Redirected - can't register while logged in."
                   RedirectUserDetailsNoAuth -> R.text "Redirected - can't view user details while logged out."
+                  RedirectLogout -> R.text "Redirected - you've logged out."
           ]
         , action:
           [ iconButton
