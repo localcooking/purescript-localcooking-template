@@ -6,7 +6,7 @@ import LocalCooking.Window (WindowSize, widthToWindowSize)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Auth.Error (PreliminaryAuthToken (..))
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..))
-import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, toDocumentTitle)
+import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
@@ -195,7 +195,7 @@ defaultMain
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
               replaceState' (rootLink :: siteLinks) h
-              setDocumentTitle d $ toDocumentTitle $ rootLink :: siteLinks
+              setDocumentTitle d $ defaultSiteLinksToDocumentTitle $ rootLink :: siteLinks
               pure rootLink
             _ -> pure x
         _ | x == registerLink -> do
@@ -204,7 +204,7 @@ defaultMain
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
               replaceState' (rootLink :: siteLinks) h
-              setDocumentTitle d $ toDocumentTitle $ rootLink :: siteLinks
+              setDocumentTitle d $ defaultSiteLinksToDocumentTitle $ rootLink :: siteLinks
               pure rootLink
             _ -> pure x
           | otherwise -> pure x
@@ -212,7 +212,7 @@ defaultMain
     sig <- IxSignal.make initSiteLink
     flip onPopState w \(siteLink :: siteLinks) -> do
       let continue x = do
-            setDocumentTitle d (toDocumentTitle x)
+            setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
             IxSignal.set x sig
       -- Top level redirect for browser back-button - no history change:
       case getUserDetailsLink siteLink of
@@ -248,7 +248,7 @@ defaultMain
       when (y /= siteLink) $ do
         let continue x = do
               pushState' x h
-              setDocumentTitle d (toDocumentTitle x)
+              setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
               IxSignal.set x currentPageSignal
         -- redirect rules
         case getUserDetailsLink siteLink of

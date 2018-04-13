@@ -7,6 +7,7 @@ import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
 import Data.Foreign (toForeign, unsafeFromForeign)
 import Data.Argonaut (encodeJson, decodeJson)
+import Type.Proxy (Proxy (..))
 import Text.Parsing.StringParser (Parser, runParser, try)
 import Text.Parsing.StringParser.String (string, char, eof)
 import Text.Parsing.StringParser.Combinators (optionMaybe)
@@ -31,6 +32,7 @@ class FromLocation sym where
 class Eq userDetailsLinks <= LocalCookingUserDetailsLinks userDetailsLinks where
   userDetailsGeneralLink :: userDetailsLinks
   userDetailsSecurityLink :: userDetailsLinks
+  toUserDetailsDocumentTitle :: userDetailsLinks -> String -- ^ The prefix, i.e. `Security - `
 
 
 class ( Eq siteLinks
@@ -42,7 +44,8 @@ class ( Eq siteLinks
   registerLink :: siteLinks
   userDetailsLink :: Maybe userDetailsLinks -> siteLinks
   getUserDetailsLink :: siteLinks -> Maybe (Maybe userDetailsLinks)
-  toDocumentTitle :: siteLinks -> DocumentTitle
+  toDocumentTitle :: siteLinks -> String -- ^ The prefix, i.e. `Register - `
+  subsidiaryTitle :: Proxy siteLinks -> String -- ^ The suffix, i.e. ` Chefs`
 
 
 defaultSiteLinksPathParser :: forall siteLinks userDetailsLinks
@@ -68,46 +71,45 @@ defaultSiteLinksPathParser userDetailsLinksParser = do
 defaultSiteLinksToDocumentTitle :: forall siteLinks userDetailsLinks
                                  . LocalCookingSiteLinks siteLinks userDetailsLinks
                                 => Eq siteLinks
-                                => (userDetailsLinks -> String)
-                                -> (siteLinks -> String) -- ^ when non-standard, returning `Foo - `
-                                -> String -- ^ "Extra", i.e. ` Chefs` in "Local Cooking Chefs"
-                                -> siteLinks
+                                => siteLinks
                                 -> DocumentTitle
-defaultSiteLinksToDocumentTitle userDetailsToDocumentTitle onNonstandard extra link =
+defaultSiteLinksToDocumentTitle link =
   DocumentTitle $ case getUserDetailsLink link of
     Just mDetails ->
       let x = case mDetails of
                 Nothing -> ""
-                Just d -> userDetailsToDocumentTitle d
+                Just d -> toUserDetailsDocumentTitle d
       in  x <> "User Details - " <> docT
     _ | link == rootLink -> docT
       | link == registerLink -> "Register - " <> docT
-      | otherwise -> onNonstandard link <> docT
+      | otherwise -> toDocumentTitle link <> docT
   where
-    docT = "Local Cooking" <> extra
+    docT = "Local Cooking" <> subsidiaryTitle (Proxy :: Proxy siteLinks)
 
 
 
 pushState' :: forall eff siteLinks userDetailsLinks
             . ToLocation siteLinks
+           => Eq siteLinks
            => LocalCookingSiteLinks siteLinks userDetailsLinks
            => siteLinks -> History -> Eff (history :: HISTORY | eff) Unit
 pushState' x h = do
   pushState
     (toForeign $ encodeJson $ printLocation $ toLocation x)
-    (toDocumentTitle x)
+    (defaultSiteLinksToDocumentTitle x)
     (URL $ Location.printLocation $ toLocation x)
     h
 
 
 replaceState' :: forall eff siteLinks userDetailsLinks
                . ToLocation siteLinks
+              => Eq siteLinks
               => LocalCookingSiteLinks siteLinks userDetailsLinks
               => siteLinks -> History -> Eff (history :: HISTORY | eff) Unit
 replaceState' x h = do
   replaceState
     (toForeign $ encodeJson $ printLocation $ toLocation x)
-    (toDocumentTitle x)
+    (defaultSiteLinksToDocumentTitle x)
     (URL $ Location.printLocation $ toLocation x)
     h
 
