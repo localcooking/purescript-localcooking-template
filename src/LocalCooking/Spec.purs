@@ -2,6 +2,7 @@ module LocalCooking.Spec where
 
 import LocalCooking.Spec.Topbar (topbar)
 import LocalCooking.Spec.Content.Register (register)
+import LocalCooking.Spec.Content.UserDetails.Security (security)
 import LocalCooking.Spec.Dialogs.Login (loginDialog)
 import LocalCooking.Spec.Drawers.LeftMenu (leftMenu)
 import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..), UserEmailError (..))
@@ -9,12 +10,12 @@ import LocalCooking.Spec.Flags.USA (usaFlag, usaFlagViewBox)
 import LocalCooking.Spec.Flags.Colorado (coloradoFlag, coloradoFlagViewBox)
 import LocalCooking.Window (WindowSize (Laptop))
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Links.Class (registerLink, rootLink, class LocalCookingSiteLinks, class ToLocation)
+import LocalCooking.Links.Class (registerLink, rootLink, userDetailsLink, getUserDetailsLink, userDetailsGeneralLink, userDetailsSecurityLink, class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Auth.Error (AuthError (AuthExistsFailure), PreliminaryAuthToken (..))
 import LocalCooking.Common.AuthToken (AuthToken)
 import LocalCooking.Client.Dependencies.AuthToken
   ( AuthTokenSparrowClientQueues
-  , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaOut (..)
+  , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenDeltaOut (..)
   )
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitIn (..), UserEmailInitOut (..))
@@ -32,6 +33,7 @@ import Control.Monad.Aff (makeAff, nonCanceler)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Exception (EXCEPTION)
@@ -51,6 +53,11 @@ import MaterialUI.Paper (paper)
 import MaterialUI.Divider (divider)
 import MaterialUI.Typography (typography)
 import MaterialUI.Typography as Typography
+import MaterialUI.Drawer (drawer)
+import MaterialUI.Drawer as Drawer
+import MaterialUI.List (list)
+import MaterialUI.ListItem (listItem)
+import MaterialUI.ListItemText (listItemText)
 import MaterialUI.Types (createStyles)
 import DOM (DOM)
 import DOM.HTML.Types (HISTORY)
@@ -86,6 +93,7 @@ data Action siteLinks
   | CallAuthToken AuthTokenInitIn
   | ChangedCurrentPage siteLinks
   | ChangedWindowSize WindowSize
+  | Logout
 
 
 type Effects eff =
@@ -101,8 +109,9 @@ type Effects eff =
   , scrypt     :: SCRYPT
   | eff)
 
-spec :: forall eff siteLinks
-      . LocalCookingSiteLinks siteLinks
+spec :: forall eff siteLinks userDetailsLinks
+      . LocalCookingSiteLinks siteLinks userDetailsLinks
+     => Eq siteLinks
      => ToLocation siteLinks
      => { toURI              :: Location -> URI
         , windowSizeSignal   :: IxSignal (Effects eff) WindowSize
@@ -143,6 +152,22 @@ spec :: forall eff siteLinks
                           , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
                           } -> Array R.ReactElement
             }
+          , userDetails ::
+            { buttons :: { toURI :: Location -> URI
+                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
+                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
+                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          } -> Array R.ReactElement
+            , content :: { toURI :: Location -> URI
+                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
+                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
+                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          } -> Array R.ReactElement
+            }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
           }
         , env :: Env
@@ -155,14 +180,14 @@ spec
   , siteLinks
   , currentPageSignal
   , development
-  , authTokenQueues
+  , authTokenQueues: authTokenQueues@{deltaIn: authTokenQueuesDeltaIn}
   , registerQueues
   , userEmailQueues
   , errorMessageQueue
   , loginPendingSignal
   , authTokenSignal
   , userEmailSignal
-  , templateArgs: templateArgs@{palette,content}
+  , templateArgs: templateArgs@{palette,content,userDetails}
   , env
   , extendedNetwork
   } = T.simpleSpec performAction render
@@ -170,6 +195,7 @@ spec
     performAction action props state = case action of
       ChangedCurrentPage p -> void $ T.cotransform _ { currentPage = p }
       ChangedWindowSize p -> void $ T.cotransform _ { windowSize = p }
+      Logout -> liftEff $ One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
       -- Mapping between programmatic authToken signal and UI shared state & error signaling
       GotAuthToken mToken -> void $ T.cotransform _ { authToken = mToken }
       CallAuthToken initIn -> do
@@ -182,7 +208,7 @@ spec
             Nothing -> do
               IxSignal.set Nothing authTokenSignal
               One.putQueue errorMessageQueue (SnackbarMessageAuthError AuthExistsFailure)
-            Just {initOut,deltaIn: _,unsubscribe} -> case initOut of -- TODO logging out directly pushes a DeltaOut to the sparrowClientQueues, to automatically clean up dangling listeners
+            Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
               AuthTokenInitOutSuccess authToken -> do
                 IxSignal.set (Just authToken) authTokenSignal
                 -- fetch user email
@@ -284,24 +310,94 @@ spec
                                   , position: "relative"
                                   , minHeight: "30em"
                                   }
-              } $ case unit of
-                  _ | state.currentPage == registerLink ->
-                       [ register
-                          { registerQueues
-                          , errorMessageQueue: One.writeOnly errorMessageQueue
-                          , toRoot: siteLinks rootLink
-                          , env
+              } $ case getUserDetailsLink state.currentPage of
+                Just mUserDetails ->
+                  [ Drawer.withStyles
+                    (\_ -> {paper: createStyles {position: "relative", width: "200px", zIndex: 1000}})
+                    \{classes} -> drawer
+                      { variant: Drawer.permanent
+                      , anchor: Drawer.left
+                      , classes: Drawer.createClasses classes
+                      }
+                      [ list {dense: true} $
+                        [ listItem
+                          { button: true
+                          , onClick: mkEffFn1 \_ -> unsafeCoerceEff
+                                                  $ siteLinks $ userDetailsLink
+                                                  $ Just userDetailsGeneralLink
                           }
-                       ]
-                    | otherwise ->
-                         content
-                          { siteLinks
-                          , currentPageSignal
-                          , windowSizeSignal
-                          , authTokenSignal
-                          , userEmailSignal
-                          , toURI
+                          [ listItemText
+                            { primary: "General"
+                            }
+                          ]
+                        , divider {}
+                        , listItem
+                          { button: true
+                          , onClick: mkEffFn1 \_ -> unsafeCoerceEff
+                                                  $ siteLinks $ userDetailsLink
+                                                  $ Just userDetailsSecurityLink
                           }
+                          [ listItemText
+                            { primary: "Security"
+                            }
+                          ]
+                        , divider {}
+                        ] <> userDetails.buttons
+                              { siteLinks
+                              , currentPageSignal
+                              , windowSizeSignal
+                              , authTokenSignal
+                              , userEmailSignal
+                              , toURI
+                              }
+                          <>
+                        [ listItem
+                          { button: true
+                          , onClick: mkEffFn1 \_ -> dispatch Logout
+                          }
+                          [ listItemText
+                            { primary: "Logout"
+                            }
+                          ]
+                        ]
+                      ]
+                  , R.div [RP.style {position: "absolute", left: "230px", top: "1em"}] $
+                    -- TODO pack currentPageSignal listener to this level, so side buttons
+                    -- aren't redrawn
+                    let  def =
+                          userDetails.content
+                            { siteLinks
+                            , currentPageSignal
+                            , windowSizeSignal
+                            , authTokenSignal
+                            , userEmailSignal
+                            , toURI
+                            }
+                    in  case mUserDetails of
+                      Just d
+                        | d == userDetailsSecurityLink ->
+                          [security]
+                        | otherwise -> def
+                      _ -> def
+                  ]
+
+                _ | state.currentPage == registerLink ->
+                      [ register
+                        { registerQueues
+                        , errorMessageQueue: One.writeOnly errorMessageQueue
+                        , toRoot: siteLinks rootLink
+                        , env
+                        }
+                      ]
+                  | otherwise ->
+                      content
+                        { siteLinks
+                        , currentPageSignal
+                        , windowSizeSignal
+                        , authTokenSignal
+                        , userEmailSignal
+                        , toURI
+                        }
             ]
           , typography
             { variant: Typography.subheading
@@ -344,8 +440,9 @@ spec
 
 
 
-app :: forall eff siteLinks
-     . LocalCookingSiteLinks siteLinks
+app :: forall eff siteLinks userDetailsLinks
+     . LocalCookingSiteLinks siteLinks userDetailsLinks
+    => Eq siteLinks
     => ToLocation siteLinks
     => { toURI                :: Location -> URI
        , windowSizeSignal     :: IxSignal (Effects eff) WindowSize
@@ -378,6 +475,22 @@ app :: forall eff siteLinks
             }
           , leftDrawer ::
             { buttons :: { toURI :: Location -> URI
+                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
+                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
+                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          } -> Array R.ReactElement
+            }
+          , userDetails ::
+            { buttons :: { toURI :: Location -> URI
+                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
+                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
+                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
+                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          } -> Array R.ReactElement
+            , content :: { toURI :: Location -> URI
                           , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize

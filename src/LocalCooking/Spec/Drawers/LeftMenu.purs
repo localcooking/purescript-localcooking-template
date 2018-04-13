@@ -63,8 +63,8 @@ type Effects eff =
   | eff)
 
 
-spec :: forall eff siteLinks
-      . LocalCookingSiteLinks siteLinks
+spec :: forall eff siteLinks userDetailsLinks
+      . LocalCookingSiteLinks siteLinks userDetailsLinks
      => { siteLinks :: siteLinks -> Eff (Effects eff) Unit
         , windowSizeSignal :: IxSignal (Effects eff) WindowSize
         , toURI :: Location -> URI
@@ -146,8 +146,8 @@ spec
       ]
 
 
-leftMenu :: forall eff siteLinks
-          . LocalCookingSiteLinks siteLinks
+leftMenu :: forall eff siteLinks userDetailsLinks
+          . LocalCookingSiteLinks siteLinks userDetailsLinks
          => { mobileDrawerOpenSignal :: Queue (read :: READ) (Effects eff) Unit
             , siteLinks :: siteLinks -> Eff (Effects eff) Unit
             , windowSizeSignal :: IxSignal (Effects eff) WindowSize

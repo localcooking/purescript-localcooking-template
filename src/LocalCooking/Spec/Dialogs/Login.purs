@@ -103,8 +103,8 @@ type Effects eff =
   | eff)
 
 
-spec :: forall eff siteLinks
-      . LocalCookingSiteLinks siteLinks
+spec :: forall eff siteLinks userDetailsLinks
+      . LocalCookingSiteLinks siteLinks userDetailsLinks
      => ToLocation siteLinks
      => { toURI :: Location -> URI
         , login :: EmailAddress -> HashedPassword -> Aff (Effects eff) Unit
@@ -256,8 +256,8 @@ spec {toURI,login,toRegister,env} = T.simpleSpec performAction render
 
 
 
-loginDialog :: forall eff siteLinks
-             . LocalCookingSiteLinks siteLinks
+loginDialog :: forall eff siteLinks userDetailsLinks
+             . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
             => { openLoginSignal   :: Queue (read :: READ) (Effects eff) Unit
                , windowSizeSignal  :: IxSignal (Effects eff) WindowSize

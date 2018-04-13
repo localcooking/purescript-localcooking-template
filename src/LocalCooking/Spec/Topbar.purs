@@ -1,6 +1,6 @@
 module LocalCooking.Spec.Topbar where
 
-import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation, toLocation, rootLink, isUserDetailsLink, userDetailsLink)
+import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation, toLocation, rootLink, getUserDetailsLink, userDetailsLink)
 import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Common.AuthToken (AuthToken)
 
@@ -74,8 +74,9 @@ type Effects eff =
   | eff)
 
 
-spec :: forall eff siteLinks
-      . LocalCookingSiteLinks siteLinks
+spec :: forall eff siteLinks userDetailsLinks
+      . LocalCookingSiteLinks siteLinks userDetailsLinks
+     => Eq siteLinks
      => ToLocation siteLinks
      => { toURI :: Location -> URI
         , openLoginSignal :: Queue (write :: WRITE) (Effects eff) Unit
@@ -161,10 +162,10 @@ spec
                Just email ->
                 [ button -- TODO cart iconButton
                   { color: Button.inherit
-                  , onTouchTap: mkEffFn1 \_ -> dispatch $ Clicked $ userDetailsLink :: siteLinks
-                  , disabled: case unit of
-                    _ | isUserDetailsLink state.currentPage -> true
-                      | otherwise -> false
+                  , onTouchTap: mkEffFn1 \_ -> dispatch $ Clicked $ userDetailsLink Nothing :: siteLinks
+                  , disabled: case getUserDetailsLink state.currentPage of
+                    Just _ -> true
+                    _ -> false
                   } [R.text $ Email.toString email]
                 ]
           ]
@@ -173,8 +174,9 @@ spec
 
 
 
-topbar :: forall eff siteLinks
-        . LocalCookingSiteLinks siteLinks
+topbar :: forall eff siteLinks userDetailsLinks
+        . LocalCookingSiteLinks siteLinks userDetailsLinks
+       => Eq siteLinks
        => ToLocation siteLinks
        => { toURI :: Location -> URI
           , openLoginSignal :: Queue (write :: WRITE) (Effects eff) Unit

@@ -6,7 +6,7 @@ import LocalCooking.Window (WindowSize, widthToWindowSize)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Auth.Error (PreliminaryAuthToken (..))
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..))
-import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, isUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, toDocumentTitle)
+import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, toDocumentTitle)
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
@@ -109,6 +109,22 @@ type LocalCookingArgs siteLinks eff =
                  , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
                  } -> Array ReactElement
     }
+  , userDetails ::
+    { buttons :: { toURI :: Location -> URI
+                 , siteLinks :: siteLinks -> Eff eff Unit
+                 , currentPageSignal :: IxSignal eff siteLinks
+                 , windowSizeSignal :: IxSignal eff WindowSize
+                 , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+                 , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
+                 } -> Array ReactElement
+    , content :: { toURI :: Location -> URI
+                 , siteLinks :: siteLinks -> Eff eff Unit
+                 , currentPageSignal :: IxSignal eff siteLinks
+                 , windowSizeSignal :: IxSignal eff WindowSize
+                 , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+                 , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
+                 } -> Array ReactElement
+    }
   , deps :: SparrowClientT eff (Eff eff) Unit
   , env :: Env
   , initSiteLinks :: siteLinks
@@ -118,8 +134,9 @@ type LocalCookingArgs siteLinks eff =
 
 
 
-defaultMain :: forall siteLinks eff
-             . LocalCookingSiteLinks siteLinks
+defaultMain :: forall eff siteLinks userDetailsLinks
+             . LocalCookingSiteLinks siteLinks userDetailsLinks
+            => Eq siteLinks
             => ToLocation siteLinks
             => FromLocation siteLinks
             => LocalCookingArgs siteLinks (Effects eff)
@@ -129,6 +146,7 @@ defaultMain
   , topbar
   , leftDrawer
   , content
+  , userDetails
   , env
   , initSiteLinks
   , palette
@@ -169,24 +187,27 @@ defaultMain
     initSiteLink <- do
       -- initial redirects
       let x = initSiteLinks
-      case preliminaryAuthToken of
-        PreliminaryAuthToken (Just (Right _)) -> case unit of
-          _ | x == registerLink -> do
-              void $ setTimeout 1000 $
-                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
-              replaceState' (rootLink :: siteLinks) h
-              setDocumentTitle d $ toDocumentTitle $ rootLink :: siteLinks
-              pure rootLink
-            | otherwise -> pure x
-        _ -> case unit of
-          _ | isUserDetailsLink x -> do
+      case getUserDetailsLink x of
+        Just _ -> do
+          case preliminaryAuthToken of
+            PreliminaryAuthToken (Just (Right _)) -> do
               log "didn't replace state?"
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
               replaceState' (rootLink :: siteLinks) h
               setDocumentTitle d $ toDocumentTitle $ rootLink :: siteLinks
               pure rootLink
-            | otherwise -> pure x
+            _ -> pure x
+        _ | x == registerLink -> do
+          case preliminaryAuthToken of
+            PreliminaryAuthToken Nothing -> do
+              void $ setTimeout 1000 $
+                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+              replaceState' (rootLink :: siteLinks) h
+              setDocumentTitle d $ toDocumentTitle $ rootLink :: siteLinks
+              pure rootLink
+            _ -> pure x
+          | otherwise -> pure x
 
     sig <- IxSignal.make initSiteLink
     flip onPopState w \(siteLink :: siteLinks) -> do
@@ -194,7 +215,16 @@ defaultMain
             setDocumentTitle d (toDocumentTitle x)
             IxSignal.set x sig
       -- Top level redirect for browser back-button - no history change:
-      case unit of
+      case getUserDetailsLink siteLink of
+        Just _ -> do
+          mAuth <- IxSignal.get authTokenSignal
+          case mAuth of
+            Just _ -> continue siteLink
+            Nothing -> do
+              void $ setTimeout 1000 $
+                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+              replaceState' (rootLink :: siteLinks) h
+              continue rootLink
         _ | siteLink == registerLink -> do
             mAuth <- IxSignal.get authTokenSignal
             case mAuth of
@@ -202,15 +232,6 @@ defaultMain
               Just _ -> do
                 void $ setTimeout 1000 $
                   One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
-                replaceState' (rootLink :: siteLinks) h
-                continue rootLink
-          | isUserDetailsLink siteLink -> do
-            mAuth <- IxSignal.get authTokenSignal
-            case mAuth of
-              Just _ -> continue siteLink
-              Nothing -> do
-                void $ setTimeout 1000 $
-                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
                 replaceState' (rootLink :: siteLinks) h
                 continue rootLink
           | otherwise -> continue siteLink
@@ -230,7 +251,15 @@ defaultMain
               setDocumentTitle d (toDocumentTitle x)
               IxSignal.set x currentPageSignal
         -- redirect rules
-        case unit of
+        case getUserDetailsLink siteLink of
+          Just _ -> do
+            mAuth <- IxSignal.get authTokenSignal
+            case mAuth of
+              Just _ -> continue siteLink
+              Nothing -> do
+                void $ setTimeout 1000 $
+                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                continue rootLink
           _ | siteLink == registerLink -> do
               mAuth <- IxSignal.get authTokenSignal
               case mAuth of
@@ -238,14 +267,6 @@ defaultMain
                 Just _ -> do
                   void $ setTimeout 1000 $
                     One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
-                  continue rootLink
-            | isUserDetailsLink siteLink -> do
-              mAuth <- IxSignal.get authTokenSignal
-              case mAuth of
-                Just _ -> continue siteLink
-                Nothing -> do
-                  void $ setTimeout 1000 $
-                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
                   continue rootLink
             | otherwise -> continue siteLink
     pure (One.writeOnly q)
@@ -256,25 +277,24 @@ defaultMain
   let redirectOnAuth mAuth = do
         siteLink <- IxSignal.get currentPageSignal
         let continue = One.putQueue siteLinksSignal rootLink
-        case mAuth of
-          Nothing -> do
-            -- hack for listening to the signal the first time on bind
-            once <- do
-              x <- readRef onceRef
-              writeRef onceRef true
-              pure x
-            when once $ case unit of
-              _ | isUserDetailsLink siteLink -> do
-                  void $ setTimeout 1000 $
-                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
-                  continue
-                | otherwise -> pure unit
-          Just _ -> case unit of
-            _ | siteLink == registerLink -> do
+        case getUserDetailsLink siteLink of
+          Just _ -> case mAuth of
+            Nothing -> do
+              -- hack for listening to the signal the first time on bind
+              once <- do
+                x <- readRef onceRef
+                writeRef onceRef true
+                pure x
+              when once $ do
                 void $ setTimeout 1000 $
-                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
                 continue
-              | otherwise -> pure unit
+            _ -> pure unit
+          _ | siteLink == registerLink -> do
+              void $ setTimeout 1000 $
+                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+              continue
+            | otherwise -> pure unit
   IxSignal.subscribe redirectOnAuth authTokenSignal
 
   -- auth token storage and clearing on site-wide driven changes
@@ -329,7 +349,7 @@ defaultMain
           , authTokenQueues
           , registerQueues
           , userEmailQueues
-          , templateArgs: {content,topbar,leftDrawer,palette}
+          , templateArgs: {content,topbar,leftDrawer,palette,userDetails}
           , env
           , extendedNetwork
           }

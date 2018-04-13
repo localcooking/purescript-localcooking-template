@@ -3,15 +3,19 @@ module LocalCooking.Links.Class where
 import Prelude
 import Data.URI.Location (Location, printLocation, parseLocation)
 import Data.URI.Location as Location
+import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
 import Data.Foreign (toForeign, unsafeFromForeign)
 import Data.Argonaut (encodeJson, decodeJson)
-import Text.Parsing.StringParser (runParser)
+import Text.Parsing.StringParser (Parser, runParser, try)
+import Text.Parsing.StringParser.String (string, char, eof)
+import Text.Parsing.StringParser.Combinators (optionMaybe)
+import Control.Alternative ((<|>))
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Exception (EXCEPTION, throw)
 import Control.Monad.Eff.Uncurried (mkEffFn1, runEffFn2)
 import DOM (DOM)
-import DOM.HTML.History (DocumentTitle, pushState, replaceState, URL (..))
+import DOM.HTML.History (DocumentTitle (..), pushState, replaceState, URL (..))
 import DOM.HTML.Window.Extra (onPopStateImpl)
 import DOM.HTML.Types (History, HISTORY, Window)
 
@@ -23,18 +27,70 @@ class ToLocation sym where
 class FromLocation sym where
   fromLocation :: Location -> Either String sym
 
-class Eq siteLinks <= LocalCookingSiteLinks siteLinks where
+
+class Eq userDetailsLinks <= LocalCookingUserDetailsLinks userDetailsLinks where
+  userDetailsGeneralLink :: userDetailsLinks
+  userDetailsSecurityLink :: userDetailsLinks
+
+
+class ( Eq siteLinks
+      , LocalCookingUserDetailsLinks userDetailsLinks
+      ) <= LocalCookingSiteLinks siteLinks userDetailsLinks
+           | siteLinks -> userDetailsLinks
+           , userDetailsLinks -> siteLinks where
   rootLink :: siteLinks
   registerLink :: siteLinks
-  userDetailsLink :: siteLinks
-  isUserDetailsLink :: siteLinks -> Boolean
+  userDetailsLink :: Maybe userDetailsLinks -> siteLinks
+  getUserDetailsLink :: siteLinks -> Maybe (Maybe userDetailsLinks)
   toDocumentTitle :: siteLinks -> DocumentTitle
 
 
+defaultSiteLinksPathParser :: forall siteLinks userDetailsLinks
+                            . LocalCookingSiteLinks siteLinks userDetailsLinks
+                           => Parser userDetailsLinks -> Parser siteLinks
+defaultSiteLinksPathParser userDetailsLinksParser = do
+  void divider
+  let root = rootLink <$ eof
+      register = do
+        void (string "register")
+        pure registerLink
+      userDetails = do
+        void (string "userDetails")
+        mUserDetails <- optionMaybe (divider *> userDetailsLinksParser)
+        pure (userDetailsLink mUserDetails)
+  try register
+    <|> try userDetails
+    <|> root
+  where
+    divider = char '/'
 
-pushState' :: forall eff siteLinks
+
+defaultSiteLinksToDocumentTitle :: forall siteLinks userDetailsLinks
+                                 . LocalCookingSiteLinks siteLinks userDetailsLinks
+                                => Eq siteLinks
+                                => (userDetailsLinks -> String)
+                                -> (siteLinks -> String) -- ^ when non-standard, returning `Foo - `
+                                -> String -- ^ "Extra", i.e. ` Chefs` in "Local Cooking Chefs"
+                                -> siteLinks
+                                -> DocumentTitle
+defaultSiteLinksToDocumentTitle userDetailsToDocumentTitle onNonstandard extra link =
+  DocumentTitle $ case getUserDetailsLink link of
+    Just mDetails ->
+      let x = case mDetails of
+                Nothing -> ""
+                Just d -> userDetailsToDocumentTitle d
+      in  x <> "User Details - " <> docT
+    _ | link == rootLink -> docT
+      | link == registerLink -> "Register - " <> docT
+      | otherwise -> onNonstandard link <> docT
+  where
+    docT = "Local Cooking" <> extra
+
+
+
+pushState' :: forall eff siteLinks userDetailsLinks
             . ToLocation siteLinks
-           => LocalCookingSiteLinks siteLinks
+           => LocalCookingSiteLinks siteLinks userDetailsLinks
            => siteLinks -> History -> Eff (history :: HISTORY | eff) Unit
 pushState' x h = do
   pushState
@@ -44,9 +100,9 @@ pushState' x h = do
     h
 
 
-replaceState' :: forall eff siteLinks
+replaceState' :: forall eff siteLinks userDetailsLinks
                . ToLocation siteLinks
-              => LocalCookingSiteLinks siteLinks
+              => LocalCookingSiteLinks siteLinks userDetailsLinks
               => siteLinks -> History -> Eff (history :: HISTORY | eff) Unit
 replaceState' x h = do
   replaceState
