@@ -315,6 +315,7 @@ spec
                                   }
               } $ case getUserDetailsLink state.currentPage of
                 Just mUserDetails ->
+                  -- TODO responsive design
                   [ Drawer.withStyles
                     (\_ -> {paper: createStyles {position: "relative", width: "200px", zIndex: 1000}})
                     \{classes} -> drawer
@@ -322,7 +323,7 @@ spec
                       , anchor: Drawer.left
                       , classes: Drawer.createClasses classes
                       }
-                      [ list {dense: true} $
+                      [ list {} $
                         [ listItem
                           { button: true
                           , onClick: mkEffFn1 \_ -> unsafeCoerceEff
