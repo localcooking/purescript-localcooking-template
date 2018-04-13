@@ -48,6 +48,7 @@ import React.Signal.WhileMounted as Signal
 import MaterialUI.MuiThemeProvider (ColorPalette, muiThemeProvider, createMuiTheme)
 import MaterialUI.CssBaseline (cssBaseline)
 import MaterialUI.Paper (paper)
+import MaterialUI.Divider (divider)
 import MaterialUI.Typography (typography)
 import MaterialUI.Typography as Typography
 import MaterialUI.Types (createStyles)
@@ -145,6 +146,7 @@ spec :: forall eff siteLinks
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
           }
         , env :: Env
+        , extendedNetwork :: Array R.ReactElement
         }
      -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
 spec
@@ -162,6 +164,7 @@ spec
   , userEmailSignal
   , templateArgs: templateArgs@{palette,content}
   , env
+  , extendedNetwork
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
@@ -301,6 +304,27 @@ spec
                           }
             ]
           , typography
+            { variant: Typography.subheading
+            , style: createStyles {color: "rgba(255,255,255,0.5)"}
+            , align: Typography.center
+            }
+            [ R.text "Extended Network"]
+          , R.div
+            [ RP.style {textAlign: "center"}
+            ] extendedNetwork
+            -- [ button
+            --   { href: "https://chef.localcooking.com/"
+            --   }
+            --   [ svgIcon
+            --     { viewBox: "0 0 279 279"
+            --     , color: SvgIcon.disabled
+            --     }
+            --     [ RS.svg [RP.src "https://chef.localcooking.com/static/images/"] []
+            --     ]
+            --   ]
+            -- ]
+          , divider {}
+          , typography
             { variant: Typography.caption
             , style: createStyles {marginTop: "5em"}
             , align: Typography.center
@@ -375,6 +399,7 @@ app :: forall eff siteLinks
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
           }
        , env :: Env
+       , extendedNetwork :: Array R.ReactElement
        }
     -> { spec :: R.ReactSpec Unit (State siteLinks) (Array R.ReactElement) (Effects eff)
        , dispatcher :: R.ReactThis Unit (State siteLinks) -> (Action siteLinks) -> T.EventHandler
@@ -393,6 +418,7 @@ app
   , userEmailQueues
   , templateArgs
   , env
+  , extendedNetwork
   } =
   let init =
         { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
@@ -415,6 +441,7 @@ app
           , userEmailSignal
           , templateArgs
           , env
+          , extendedNetwork
           }
         ) (initialState init)
       reactSpec' = Signal.whileMountedIxUUID

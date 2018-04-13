@@ -113,6 +113,7 @@ type LocalCookingArgs siteLinks eff =
   , env :: Env
   , initSiteLinks :: siteLinks
   , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
+  , extendedNetwork :: Array R.ReactElement
   }
 
 
@@ -131,6 +132,7 @@ defaultMain
   , env
   , initSiteLinks
   , palette
+  , extendedNetwork
   } = do
   injectTapEvent
   _ <- registerShim
@@ -329,6 +331,7 @@ defaultMain
           , userEmailQueues
           , templateArgs: {content,topbar,leftDrawer,palette}
           , env
+          , extendedNetwork
           }
       component = R.createClass reactSpec
   traverse_ (render (R.createFactory component props) <<< htmlElementToElement) =<< body d
