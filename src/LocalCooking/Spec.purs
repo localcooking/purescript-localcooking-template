@@ -305,24 +305,13 @@ spec
             ]
           , typography
             { variant: Typography.subheading
-            , style: createStyles {color: "rgba(255,255,255,0.5)"}
+            , style: createStyles {color: "rgba(255,255,255,0.5)", marginTop: "5em"}
             , align: Typography.center
             }
             [ R.text "Extended Network"]
           , R.div
-            [ RP.style {textAlign: "center"}
+            [ RP.style {textAlign: "center", marginBottom: "5em"}
             ] extendedNetwork
-            -- [ button
-            --   { href: "https://chef.localcooking.com/"
-            --   }
-            --   [ svgIcon
-            --     { viewBox: "0 0 279 279"
-            --     , color: SvgIcon.disabled
-            --     }
-            --     [ RS.svg [RP.src "https://chef.localcooking.com/static/images/"] []
-            --     ]
-            --   ]
-            -- ]
           , divider {}
           , typography
             { variant: Typography.caption
