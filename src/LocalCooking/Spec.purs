@@ -380,7 +380,8 @@ spec
                     in  case mUserDetails of
                       Just d
                         | d == userDetailsSecurityLink ->
-                          [security]
+                          [ security
+                          ]
                         | otherwise -> def
                       _ -> def
                   ]

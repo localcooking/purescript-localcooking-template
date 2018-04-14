@@ -50,12 +50,16 @@ type State siteLinks =
   }
 
 initialState :: forall siteLinks
-              . {initWindowSize :: WindowSize, initSiteLinks :: siteLinks} -> State siteLinks
-initialState {initWindowSize,initSiteLinks} =
+              . { initWindowSize :: WindowSize
+                , initSiteLinks :: siteLinks
+                , initAuthToken :: Maybe AuthToken
+                , initUserEmail :: Maybe EmailAddress
+                } -> State siteLinks
+initialState {initWindowSize,initSiteLinks,initAuthToken,initUserEmail} =
   { windowSize: initWindowSize
   , currentPage: initSiteLinks
-  , authToken: Nothing
-  , userEmail: Nothing
+  , authToken: initAuthToken
+  , userEmail: initUserEmail
   }
 
 data Action siteLinks
@@ -210,6 +214,8 @@ topbar
   let init =
         { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
         , initWindowSize: unsafePerformEff $ IxSignal.get windowSizeSignal
+        , initAuthToken: unsafePerformEff $ IxSignal.get authTokenSignal
+        , initUserEmail: unsafePerformEff $ IxSignal.get userEmailSignal
         }
       {spec:reactSpec,dispatcher} = T.createReactSpec
         ( spec
