@@ -63,7 +63,7 @@ defaultSiteLinksPathParser userDetailsLinksParser = do
         pure (userDetailsLink mUserDetails)
   try register
     <|> try userDetails
-    <|> root
+    <|> try root
   where
     divider = char '/'
 
