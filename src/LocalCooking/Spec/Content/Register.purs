@@ -50,8 +50,8 @@ import Queue.One.Aff as OneIO
 
 type State =
   { reCaptcha            :: Maybe ReCaptchaResponse
-  , email                :: Maybe (Maybe EmailAddress)
-  , emailConfirm         :: Maybe (Maybe EmailAddress)
+  -- , email                :: Maybe (Maybe EmailAddress)
+  -- , emailConfirm         :: Maybe (Maybe EmailAddress)
   -- , email                :: String
   -- , emailDirty           :: Maybe Boolean
   -- , emailConfirm         :: String
@@ -66,8 +66,8 @@ type State =
 initialState :: State
 initialState =
   { reCaptcha: Nothing
-  , email: Nothing
-  , emailConfirm: Nothing
+  -- , email: Nothing
+  -- , emailConfirm: Nothing
   -- , email: ""
   -- , emailDirty: Nothing
   -- , emailConfirm: ""
@@ -81,9 +81,9 @@ initialState =
 
 data Action
   = GotReCaptchaVerify ReCaptchaResponse
-  | ChangedEmail (Maybe (Maybe EmailAddress))
+  -- | ChangedEmail (Maybe (Maybe EmailAddress))
   -- | ChangedEmail String
-  | ChangedEmailConfirm (Maybe (Maybe EmailAddress))
+  -- | ChangedEmailConfirm (Maybe (Maybe EmailAddress))
   -- | ChangedEmailConfirm String
   -- | EmailUnfocused
   -- | EmailConfirmUnfocused
@@ -121,8 +121,8 @@ spec
   where
     performAction action props state = case action of
       GotReCaptchaVerify e -> void $ T.cotransform _ { reCaptcha = Just e }
-      ChangedEmail e -> void $ T.cotransform _ { email = e }
-      ChangedEmailConfirm e -> void $ T.cotransform _ { emailConfirm = e }
+      -- ChangedEmail e -> void $ T.cotransform _ { email = e }
+      -- ChangedEmailConfirm e -> void $ T.cotransform _ { emailConfirm = e }
       -- EmailUnfocused -> void $ T.cotransform _ { emailDirty = Just true }
       -- EmailConfirmUnfocused -> void $ T.cotransform _ { emailConfirmDirty = Just true }
       ChangedPassword e -> void $ T.cotransform _ { password = e, passwordDirty = Just false }
@@ -131,7 +131,7 @@ spec
       PasswordConfirmUnfocused -> void $ T.cotransform _ { passwordConfirmDirty = Just true }
       SubmitRegister -> do
         void $ T.cotransform _ { pending = true }
-        case state.email of
+        case unsafePerformEff (IxSignal.get emailSignal) of
           Just (Just email) -> case state.reCaptcha of
             Nothing -> pure unit
             Just reCaptcha -> do
@@ -259,9 +259,10 @@ spec
             , variant: Button.raised
             , size: Button.large
             , style: createStyles {marginTop: "1em"}
-            , disabled: case state.email of
+            , disabled: case unsafePerformEff (IxSignal.get emailSignal) of
               Just (Just _) ->
-                   state.email /= state.emailConfirm
+                   -- state.email /= state.emailConfirm
+                   unsafePerformEff ((==) <$> IxSignal.get emailSignal <*> IxSignal.get emailConfirmSignal)
                 || state.password /= state.passwordConfirm
                 || case state.passwordDirty of
                       Nothing -> true
@@ -314,15 +315,15 @@ register {registerQueues,errorMessageQueue,toRoot,env} =
             , emailConfirmSignal
             }
             ) initialState
-      reactSpec' =
-          Signal.whileMountedIxUUID
-            emailSignal
-            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedEmail x))
-        $ Signal.whileMountedIxUUID
-            emailConfirmSignal
-            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedEmailConfirm x))
-            reactSpec
-  in  R.createElement (R.createClass reactSpec') unit []
+      -- reactSpec' =
+      --     Signal.whileMountedIxUUID
+      --       emailSignal
+      --       (\this x -> unsafeCoerceEff $ dispatcher this (ChangedEmail x))
+      --   $ Signal.whileMountedIxUUID
+      --       emailConfirmSignal
+      --       (\this x -> unsafeCoerceEff $ dispatcher this (ChangedEmailConfirm x))
+      --       reactSpec
+  in  R.createElement (R.createClass reactSpec) unit []
   where
     emailSignal = unsafePerformEff (IxSignal.make Nothing)
     emailConfirmSignal = unsafePerformEff (IxSignal.make Nothing)

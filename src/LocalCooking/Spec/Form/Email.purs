@@ -47,11 +47,17 @@ spec :: forall eff
         , name :: String
         , id :: String
         } -> T.Spec (Effects eff) State Unit Action
-spec {emailSignal,parentSignal,label,fullWidth,name,id} = T.simpleSpec performAction render
+spec
+  { emailSignal
+  , parentSignal
+  , label
+  , fullWidth
+  , name
+  , id
+  } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
       ChangedEmail e -> do
-        liftEff (IxSignal.set Nothing emailSignal)
         void $ T.cotransform _ { email = e }
       EmailUnfocused -> liftEff $ case emailAddress state.email of
         Nothing -> IxSignal.set (Just Nothing) emailSignal
