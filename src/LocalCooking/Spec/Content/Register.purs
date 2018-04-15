@@ -1,5 +1,6 @@
 module LocalCooking.Spec.Content.Register where
 
+import LocalCooking.Spec.Form.Email (email)
 import LocalCooking.Spec.Snackbar (SnackbarMessage (SnackbarMessageRegister), RegisterError (..))
 import LocalCooking.Types.Env (Env)
 import Google.ReCaptcha (ReCaptchaResponse)
@@ -9,13 +10,14 @@ import LocalCooking.Common.Password (hashPassword)
 import Prelude
 import Data.Maybe (Maybe (..))
 import Data.UUID (GENUUID)
-import Text.Email.Validate (emailAddress)
+import Text.Email.Validate (EmailAddress, emailAddress)
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
+import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
 
 import Thermite as T
@@ -23,6 +25,7 @@ import React as R
 import React.DOM as R
 import React.DOM.Props as RP
 import React.ReCaptcha (reCaptcha)
+import React.Signal.WhileMounted as Signal
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Typography (typography)
@@ -38,6 +41,8 @@ import MaterialUI.CircularProgress (circularProgress)
 import Crypto.Scrypt (SCRYPT)
 
 import Unsafe.Coerce (unsafeCoerce)
+import IxSignal.Internal (IxSignal)
+import IxSignal.Internal as IxSignal
 import Queue (WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -45,10 +50,12 @@ import Queue.One.Aff as OneIO
 
 type State =
   { reCaptcha            :: Maybe ReCaptchaResponse
-  , email                :: String
-  , emailDirty           :: Maybe Boolean
-  , emailConfirm         :: String
-  , emailConfirmDirty    :: Maybe Boolean
+  , email                :: Maybe (Maybe EmailAddress)
+  , emailConfirm         :: Maybe (Maybe EmailAddress)
+  -- , email                :: String
+  -- , emailDirty           :: Maybe Boolean
+  -- , emailConfirm         :: String
+  -- , emailConfirmDirty    :: Maybe Boolean
   , password             :: String
   , passwordDirty        :: Maybe Boolean
   , passwordConfirm      :: String
@@ -59,10 +66,12 @@ type State =
 initialState :: State
 initialState =
   { reCaptcha: Nothing
-  , email: ""
-  , emailDirty: Nothing
-  , emailConfirm: ""
-  , emailConfirmDirty: Nothing
+  , email: Nothing
+  , emailConfirm: Nothing
+  -- , email: ""
+  -- , emailDirty: Nothing
+  -- , emailConfirm: ""
+  -- , emailConfirmDirty: Nothing
   , password: ""
   , passwordDirty: Nothing
   , passwordConfirm: ""
@@ -72,10 +81,12 @@ initialState =
 
 data Action
   = GotReCaptchaVerify ReCaptchaResponse
-  | ChangedEmail String
-  | ChangedEmailConfirm String
-  | EmailUnfocused
-  | EmailConfirmUnfocused
+  | ChangedEmail (Maybe (Maybe EmailAddress))
+  -- | ChangedEmail String
+  | ChangedEmailConfirm (Maybe (Maybe EmailAddress))
+  -- | ChangedEmailConfirm String
+  -- | EmailUnfocused
+  -- | EmailConfirmUnfocused
   | ChangedPassword String
   | ChangedPasswordConfirm String
   | PasswordUnfocused
@@ -96,29 +107,32 @@ spec :: forall eff
         , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
         , toRoot :: Eff (Effects eff) Unit
         , env :: Env
+        , emailSignal :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
+        , emailConfirmSignal :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
         } -> T.Spec (Effects eff) State Unit Action
 spec
   { registerQueues
   , errorMessageQueue
   , toRoot
   , env
+  , emailSignal
+  , emailConfirmSignal
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
       GotReCaptchaVerify e -> void $ T.cotransform _ { reCaptcha = Just e }
-      ChangedEmail e -> void $ T.cotransform _ { email = e, emailDirty = Just false }
-      ChangedEmailConfirm e -> void $ T.cotransform _ { emailConfirm = e, emailConfirmDirty = Just false }
+      ChangedEmail e -> void $ T.cotransform _ { email = e }
+      ChangedEmailConfirm e -> void $ T.cotransform _ { emailConfirm = e }
+      -- EmailUnfocused -> void $ T.cotransform _ { emailDirty = Just true }
+      -- EmailConfirmUnfocused -> void $ T.cotransform _ { emailConfirmDirty = Just true }
       ChangedPassword e -> void $ T.cotransform _ { password = e, passwordDirty = Just false }
       ChangedPasswordConfirm e -> void $ T.cotransform _ { passwordConfirm = e, passwordConfirmDirty = Just false }
-      EmailUnfocused -> void $ T.cotransform _ { emailDirty = Just true }
-      EmailConfirmUnfocused -> void $ T.cotransform _ { emailConfirmDirty = Just true }
       PasswordUnfocused -> void $ T.cotransform _ { passwordDirty = Just true }
       PasswordConfirmUnfocused -> void $ T.cotransform _ { passwordConfirmDirty = Just true }
       SubmitRegister -> do
         void $ T.cotransform _ { pending = true }
-        case emailAddress state.email of
-          Nothing -> pure unit
-          Just email -> case state.reCaptcha of
+        case state.email of
+          Just (Just email) -> case state.reCaptcha of
             Nothing -> pure unit
             Just reCaptcha -> do
               mErr <- liftBase $ do
@@ -134,6 +148,7 @@ spec
                     liftEff $ One.putQueue errorMessageQueue $ SnackbarMessageRegister $ Just RegisterErrorBadCaptchaResponse
                   RegisterInitOutDBError e ->
                     liftEff $ One.putQueue errorMessageQueue $ SnackbarMessageRegister $ Just RegisterErrorEmailInUse
+          _ -> pure unit
 
     render :: T.Render State Unit Action
     render dispatch props state children =
@@ -153,34 +168,50 @@ spec
           { xs: 6
           , item: true
           }
-          [ textField
+          -- [ textField
+          --   { label: R.text "Email"
+          --   , fullWidth: true
+          --   , onChange: mkEffFn1 \e -> dispatch $ ChangedEmail (unsafeCoerce e).target.value
+          --   , onBlur: mkEffFn1 \_ -> dispatch EmailUnfocused
+          --   , error: case emailAddress state.email of
+          --       Nothing -> state.emailDirty == Just true
+          --       Just _ -> case state.emailConfirmDirty of
+          --         Nothing -> false
+          --         Just dirty
+          --           | dirty -> state.email /= state.emailConfirm
+          --           | otherwise -> false
+          --   , name: "register-email"
+          --   , id: "register-email"
+          --   }
+          [ email
             { label: R.text "Email"
             , fullWidth: true
-            , onChange: mkEffFn1 \e -> dispatch $ ChangedEmail (unsafeCoerce e).target.value
-            , onBlur: mkEffFn1 \_ -> dispatch EmailUnfocused
-            , error: case emailAddress state.email of
-                Nothing -> state.emailDirty == Just true
-                Just _ -> case state.emailConfirmDirty of
-                  Nothing -> false
-                  Just dirty
-                    | dirty -> state.email /= state.emailConfirm
-                    | otherwise -> false
             , name: "register-email"
             , id: "register-email"
+            , emailSignal
+            , parentSignal: Nothing
             }
-          , textField
+          , email
             { label: R.text "Email Confirm"
             , fullWidth: true
-            , onChange: mkEffFn1 \e -> dispatch $ ChangedEmailConfirm (unsafeCoerce e).target.value
-            , onBlur: mkEffFn1 \_ -> dispatch EmailConfirmUnfocused
-            , error: case emailAddress state.emailConfirm of
-                Nothing -> state.emailConfirmDirty == Just true
-                Just _ -> case state.emailDirty of
-                  Nothing -> false
-                  Just _ -> state.email /= state.emailConfirm
             , name: "register-email-confirm"
             , id: "register-email-confirm"
+            , emailSignal: emailConfirmSignal
+            , parentSignal: Just emailSignal
             }
+          -- , textField
+          --   { label: R.text "Email Confirm"
+          --   , fullWidth: true
+          --   , onChange: mkEffFn1 \e -> dispatch $ ChangedEmailConfirm (unsafeCoerce e).target.value
+          --   , onBlur: mkEffFn1 \_ -> dispatch EmailConfirmUnfocused
+          --   , error: case emailAddress state.emailConfirm of
+          --       Nothing -> state.emailConfirmDirty == Just true
+          --       Just _ -> case state.emailDirty of
+          --         Nothing -> false
+          --         Just _ -> state.email /= state.emailConfirm
+          --   , name: "register-email-confirm"
+          --   , id: "register-email-confirm"
+          --   }
           , textField
             { label: R.text "Password"
             , fullWidth: true
@@ -228,15 +259,16 @@ spec
             , variant: Button.raised
             , size: Button.large
             , style: createStyles {marginTop: "1em"}
-            , disabled: case emailAddress state.email of
-              Nothing -> true
-              Just _ -> state.email /= state.emailConfirm
-                    || state.password /= state.passwordConfirm
-                    || case state.passwordDirty of
-                          Nothing -> true
-                          Just _ -> case state.reCaptcha of
-                            Nothing -> true
-                            Just _ -> false
+            , disabled: case state.email of
+              Just (Just _) ->
+                   state.email /= state.emailConfirm
+                || state.password /= state.passwordConfirm
+                || case state.passwordDirty of
+                      Nothing -> true
+                      Just _ -> case state.reCaptcha of
+                        Nothing -> true
+                        Just _ -> false
+              _ -> true
             , onTouchTap: mkEffFn1 \_ -> dispatch SubmitRegister
             } [R.text "Submit"]
           ]
@@ -264,12 +296,33 @@ spec
 
 
 register :: forall eff
-          . { registerQueues :: RegisterSparrowClientQueues (Effects eff)
+          . { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
             , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-            , toRoot         :: Eff (Effects eff) Unit
-            , env :: Env
+            , toRoot            :: Eff (Effects eff) Unit
+            , env               :: Env
             }
          -> R.ReactElement
-register params =
-  let {spec: reactSpec, dispatcher} = T.createReactSpec (spec params) initialState
-  in  R.createElement (R.createClass reactSpec) unit []
+register {registerQueues,errorMessageQueue,toRoot,env} =
+  let {spec: reactSpec, dispatcher} =
+        T.createReactSpec
+          ( spec
+            { registerQueues
+            , errorMessageQueue
+            , toRoot
+            , env
+            , emailSignal
+            , emailConfirmSignal
+            }
+            ) initialState
+      reactSpec' =
+          Signal.whileMountedIxUUID
+            emailSignal
+            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedEmail x))
+        $ Signal.whileMountedIxUUID
+            emailConfirmSignal
+            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedEmailConfirm x))
+            reactSpec
+  in  R.createElement (R.createClass reactSpec') unit []
+  where
+    emailSignal = unsafePerformEff (IxSignal.make Nothing)
+    emailConfirmSignal = unsafePerformEff (IxSignal.make Nothing)

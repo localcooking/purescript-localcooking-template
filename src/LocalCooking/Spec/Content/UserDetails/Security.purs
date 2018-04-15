@@ -6,6 +6,11 @@ import Thermite as T
 import React as R
 import React.DOM as R
 
+import MaterialUI.Typography (typography)
+import MaterialUI.Typography as Typography
+
+
+
 
 type State = Unit
 
@@ -15,14 +20,23 @@ initialState = unit
 type Action = Unit
 
 
-spec :: forall eff. T.Spec eff State Unit Action
+spec :: forall eff
+      . T.Spec eff State Unit Action
 spec = T.simpleSpec performAction render
   where
     performAction action props state = pure unit
 
     render :: T.Render State Unit Action
     render dispatch props state children =
-      [ R.text "Security" ]
+      [ typography
+        { variant: Typography.display1
+        , align: Typography.center
+        } [R.text "Security"]
+      -- , textField
+      --   { label: R.text "Email Address"
+      --   , onChange: 
+      --   }
+      ]
 
 
 security :: R.ReactElement
