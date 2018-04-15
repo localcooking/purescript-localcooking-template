@@ -294,10 +294,12 @@ defaultMain
                   One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
                 continue
             _ -> pure unit
-          _ | siteLink == registerLink -> do
-              void $ setTimeout 1000 $
-                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
-              continue
+          _ | siteLink == registerLink -> case mAuth of
+              Just _ -> do
+                void $ setTimeout 1000 $
+                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+                continue
+              _ -> pure unit
             | otherwise -> pure unit
   IxSignal.subscribe redirectOnAuth authTokenSignal
 
@@ -341,10 +343,8 @@ defaultMain
   let userDetailsOnAuth mAuth = case mAuth of
         Nothing -> IxSignal.set Nothing userEmailSignal
         Just authToken -> do
-          log "fetching email..."
           OneIO.callAsyncEff userEmailQueues
-            (\mInitOut -> do
-                log $ "received: " <> show mInitOut
+            (\mInitOut ->
                 case mInitOut of
                   Nothing -> do
                     IxSignal.set Nothing userEmailSignal

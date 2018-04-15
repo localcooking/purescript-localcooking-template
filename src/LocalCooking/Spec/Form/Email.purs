@@ -24,16 +24,19 @@ import IxSignal.Internal as IxSignal
 
 type State =
   { email :: String
+  , rerender :: Unit
   }
 
 initialState :: State
 initialState =
   { email: ""
+  , rerender: unit
   }
 
 data Action
   = ChangedEmail String
   | EmailUnfocused
+  | ReRender
 
 type Effects eff =
   ( ref :: REF
@@ -60,9 +63,12 @@ spec
       ChangedEmail e -> do
         liftEff $ IxSignal.set Nothing emailSignal
         void $ T.cotransform _ { email = e }
-      EmailUnfocused -> liftEff $ case emailAddress state.email of
-        Nothing -> IxSignal.set (Just Nothing) emailSignal
-        Just e -> IxSignal.set (Just (Just e)) emailSignal
+      EmailUnfocused -> do
+        liftEff $ case emailAddress state.email of
+          Nothing -> IxSignal.set (Just Nothing) emailSignal
+          Just e -> IxSignal.set (Just (Just e)) emailSignal
+        performAction ReRender props state
+      ReRender -> void $ T.cotransform _ { rerender = unit }
 
     render :: T.Render State Unit Action
     render dispatch props state children =
