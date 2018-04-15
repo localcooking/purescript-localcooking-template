@@ -52,7 +52,6 @@ defaultSiteLinksPathParser :: forall siteLinks userDetailsLinks
                             . LocalCookingSiteLinks siteLinks userDetailsLinks
                            => Parser userDetailsLinks -> Parser siteLinks
 defaultSiteLinksPathParser userDetailsLinksParser = do
-  void divider
   let root = rootLink <$ eof
       register = do
         void (string "register")
@@ -63,7 +62,7 @@ defaultSiteLinksPathParser userDetailsLinksParser = do
         pure (userDetailsLink mUserDetails)
   try register
     <|> try userDetails
-    <|> try root
+    <|> root
   where
     divider = char '/'
 
