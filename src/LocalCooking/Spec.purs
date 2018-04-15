@@ -216,22 +216,22 @@ spec
             Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
               AuthTokenInitOutSuccess authToken -> do
                 IxSignal.set (Just authToken) authTokenSignal
-                -- fetch user email
-                case initIn of
-                  AuthTokenInitInLogin {email} ->
-                    IxSignal.set (Just email) userEmailSignal
-                  AuthTokenInitInExists _ ->
-                    OneIO.callAsyncEff userEmailQueues
-                      (\mInitOut -> case mInitOut of
-                          Nothing ->
-                            One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
-                          Just initOut -> case initOut of
-                            UserEmailInitOutSuccess email ->
-                              IxSignal.set (Just email) userEmailSignal
-                            UserEmailInitOutNoAuth ->
-                              One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth)
-                      )
-                      (UserEmailInitIn authToken)
+                -- -- fetch user email
+                -- case initIn of
+                --   AuthTokenInitInLogin {email} ->
+                --     IxSignal.set (Just email) userEmailSignal
+                --   AuthTokenInitInExists _ ->
+                --     OneIO.callAsyncEff userEmailQueues
+                --       (\mInitOut -> case mInitOut of
+                --           Nothing ->
+                --             One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
+                --           Just initOut -> case initOut of
+                --             UserEmailInitOutSuccess email ->
+                --               IxSignal.set (Just email) userEmailSignal
+                --             UserEmailInitOutNoAuth ->
+                --               One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth)
+                --       )
+                --       (UserEmailInitIn authToken)
               AuthTokenInitOutFailure e -> do
                 unsubscribe
                 IxSignal.set Nothing authTokenSignal

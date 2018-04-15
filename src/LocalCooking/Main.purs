@@ -5,11 +5,11 @@ import LocalCooking.Types.Env (Env)
 import LocalCooking.Window (WindowSize, widthToWindowSize)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Auth.Error (PreliminaryAuthToken (..))
-import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..))
+import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..), UserEmailError (..))
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
-import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
+import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitOut (..), UserEmailInitIn (..))
 import LocalCooking.Common.AuthToken (AuthToken)
 
 import Sparrow.Client (allocateDependencies, unpackClient)
@@ -57,6 +57,7 @@ import Signal.Time (debounce)
 import Signal.DOM (windowDimensions)
 import Queue (READ, WRITE)
 import Queue.One as One
+import Queue.One.Aff as OneIO
 import Browser.WebStorage (WEB_STORAGE)
 import WebSocket (WEBSOCKET)
 import Network.HTTP.Affjax (AJAX)
@@ -179,6 +180,9 @@ defaultMain
     ) <- One.newQueue
 
   ( authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+    ) <- IxSignal.make Nothing
+
+  ( userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
     ) <- IxSignal.make Nothing
 
   -- for `back` compatibility while being driven by `siteLinksSignal`
@@ -332,6 +336,25 @@ defaultMain
     unpackClient (Topic ["register"]) (sparrowStaticClientQueues registerQueues)
     unpackClient (Topic ["userEmail"]) (sparrowStaticClientQueues userEmailQueues)
     deps
+
+  -- user details fetcher and oblitorator
+  let userDetailsOnAuth mAuth = case mAuth of
+        Nothing -> IxSignal.set Nothing userEmailSignal
+        Just authToken ->
+          OneIO.callAsyncEff userEmailQueues
+            (\mInitOut -> case mInitOut of
+                Nothing -> do
+                  IxSignal.set Nothing userEmailSignal
+                  One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
+                Just initOut -> case initOut of
+                  UserEmailInitOutSuccess email ->
+                    IxSignal.set (Just email) userEmailSignal
+                  UserEmailInitOutNoAuth -> do
+                    IxSignal.set Nothing userEmailSignal
+                    One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth)
+            )
+            (UserEmailInitIn authToken)
+  IxSignal.subscribe userDetailsOnAuth authTokenSignal
 
 
   -- Run User Interface
