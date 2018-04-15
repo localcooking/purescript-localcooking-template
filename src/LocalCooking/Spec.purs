@@ -38,7 +38,7 @@ import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Now (NOW)
-import Control.Monad.Eff.Timer (TIMER)
+import Control.Monad.Eff.Timer (TIMER, setTimeout)
 import Control.Monad.Base (liftBase)
 
 import Thermite as T
@@ -197,7 +197,9 @@ spec
       ChangedWindowSize p -> void $ T.cotransform _ { windowSize = p }
       Logout -> liftEff $ do
         One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
-        One.putQueue errorMessageQueue $ SnackbarMessageRedirect RedirectLogout
+        void $ setTimeout 500 $
+          One.putQueue errorMessageQueue $ SnackbarMessageRedirect RedirectLogout
+        IxSignal.set Nothing authTokenSignal
         siteLinks rootLink
       -- Mapping between programmatic authToken signal and UI shared state & error signaling
       GotAuthToken mToken -> void $ T.cotransform _ { authToken = mToken }
