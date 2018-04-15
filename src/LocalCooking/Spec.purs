@@ -125,6 +125,8 @@ spec :: forall eff siteLinks userDetailsLinks
         , loginPendingSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
         , authTokenSignal    :: IxSignal (Effects eff) (Maybe AuthToken)
         , userEmailSignal    :: IxSignal (Effects eff) (Maybe EmailAddress)
+        , emailSignal        :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
+        , emailConfirmSignal :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
         , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -187,6 +189,8 @@ spec
   , loginPendingSignal
   , authTokenSignal
   , userEmailSignal
+  , emailSignal
+  , emailConfirmSignal
   , templateArgs: templateArgs@{palette,content,userDetails}
   , env
   , extendedNetwork
@@ -394,6 +398,8 @@ spec
                         , errorMessageQueue: One.writeOnly errorMessageQueue
                         , toRoot: siteLinks rootLink
                         , env
+                        , emailSignal
+                        , emailConfirmSignal
                         }
                       ]
                   | otherwise ->
@@ -553,6 +559,8 @@ app
           , templateArgs
           , env
           , extendedNetwork
+          , emailSignal
+          , emailConfirmSignal
           }
         ) (initialState init)
       reactSpec' = Signal.whileMountedIxUUID
@@ -582,3 +590,6 @@ app
   where
     loginPendingSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
     loginPendingSignal = unsafePerformEff One.newQueue
+
+    emailSignal = unsafePerformEff (IxSignal.make Nothing)
+    emailConfirmSignal = unsafePerformEff (IxSignal.make Nothing)

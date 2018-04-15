@@ -26,6 +26,7 @@ import React.DOM as R
 import React.DOM.Props as RP
 import React.ReCaptcha (reCaptcha)
 import React.Signal.WhileMounted as Signal
+import React.Queue.WhileMounted as Queue
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Typography (typography)
@@ -43,55 +44,42 @@ import Crypto.Scrypt (SCRYPT)
 import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
-import Queue (WRITE)
+import Queue (WRITE, READ)
 import Queue.One as One
 import Queue.One.Aff as OneIO
+import IxQueue (IxQueue)
+import IxQueue as IxQueue
 
 
 type State =
   { reCaptcha            :: Maybe ReCaptchaResponse
-  -- , email                :: Maybe (Maybe EmailAddress)
-  -- , emailConfirm         :: Maybe (Maybe EmailAddress)
-  -- , email                :: String
-  -- , emailDirty           :: Maybe Boolean
-  -- , emailConfirm         :: String
-  -- , emailConfirmDirty    :: Maybe Boolean
   , password             :: String
   , passwordDirty        :: Maybe Boolean
   , passwordConfirm      :: String
   , passwordConfirmDirty :: Maybe Boolean
   , pending              :: Boolean
+  , rerender             :: Unit
   }
 
 initialState :: State
 initialState =
   { reCaptcha: Nothing
-  -- , email: Nothing
-  -- , emailConfirm: Nothing
-  -- , email: ""
-  -- , emailDirty: Nothing
-  -- , emailConfirm: ""
-  -- , emailConfirmDirty: Nothing
   , password: ""
   , passwordDirty: Nothing
   , passwordConfirm: ""
   , passwordConfirmDirty: Nothing
   , pending: false
+  , rerender: unit
   }
 
 data Action
   = GotReCaptchaVerify ReCaptchaResponse
-  -- | ChangedEmail (Maybe (Maybe EmailAddress))
-  -- | ChangedEmail String
-  -- | ChangedEmailConfirm (Maybe (Maybe EmailAddress))
-  -- | ChangedEmailConfirm String
-  -- | EmailUnfocused
-  -- | EmailConfirmUnfocused
   | ChangedPassword String
   | ChangedPasswordConfirm String
   | PasswordUnfocused
   | PasswordConfirmUnfocused
   | SubmitRegister
+  | ReRender
 
 
 type Effects eff =
@@ -103,12 +91,14 @@ type Effects eff =
 
 
 spec :: forall eff
-      . { registerQueues :: RegisterSparrowClientQueues (Effects eff)
-        , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-        , toRoot :: Eff (Effects eff) Unit
-        , env :: Env
-        , emailSignal :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
+      . { registerQueues     :: RegisterSparrowClientQueues (Effects eff)
+        , errorMessageQueue  :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+        , toRoot             :: Eff (Effects eff) Unit
+        , env                :: Env
+        , emailSignal        :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
         , emailConfirmSignal :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
+        , emailUpdatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
+        , emailConfirmUpdatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
         } -> T.Spec (Effects eff) State Unit Action
 spec
   { registerQueues
@@ -117,14 +107,13 @@ spec
   , env
   , emailSignal
   , emailConfirmSignal
+  , emailUpdatedQueue
+  , emailConfirmUpdatedQueue
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
+      ReRender -> void $ T.cotransform _ { rerender = unit }
       GotReCaptchaVerify e -> void $ T.cotransform _ { reCaptcha = Just e }
-      -- ChangedEmail e -> void $ T.cotransform _ { email = e }
-      -- ChangedEmailConfirm e -> void $ T.cotransform _ { emailConfirm = e }
-      -- EmailUnfocused -> void $ T.cotransform _ { emailDirty = Just true }
-      -- EmailConfirmUnfocused -> void $ T.cotransform _ { emailConfirmDirty = Just true }
       ChangedPassword e -> void $ T.cotransform _ { password = e, passwordDirty = Just false }
       ChangedPasswordConfirm e -> void $ T.cotransform _ { passwordConfirm = e, passwordConfirmDirty = Just false }
       PasswordUnfocused -> void $ T.cotransform _ { passwordDirty = Just true }
@@ -168,21 +157,6 @@ spec
           { xs: 6
           , item: true
           }
-          -- [ textField
-          --   { label: R.text "Email"
-          --   , fullWidth: true
-          --   , onChange: mkEffFn1 \e -> dispatch $ ChangedEmail (unsafeCoerce e).target.value
-          --   , onBlur: mkEffFn1 \_ -> dispatch EmailUnfocused
-          --   , error: case emailAddress state.email of
-          --       Nothing -> state.emailDirty == Just true
-          --       Just _ -> case state.emailConfirmDirty of
-          --         Nothing -> false
-          --         Just dirty
-          --           | dirty -> state.email /= state.emailConfirm
-          --           | otherwise -> false
-          --   , name: "register-email"
-          --   , id: "register-email"
-          --   }
           [ email
             { label: R.text "Email"
             , fullWidth: true
@@ -190,6 +164,7 @@ spec
             , id: "register-email"
             , emailSignal
             , parentSignal: Nothing
+            , updatedQueue: emailUpdatedQueue
             }
           , email
             { label: R.text "Email Confirm"
@@ -198,20 +173,8 @@ spec
             , id: "register-email-confirm"
             , emailSignal: emailConfirmSignal
             , parentSignal: Just emailSignal
+            , updatedQueue: emailConfirmUpdatedQueue
             }
-          -- , textField
-          --   { label: R.text "Email Confirm"
-          --   , fullWidth: true
-          --   , onChange: mkEffFn1 \e -> dispatch $ ChangedEmailConfirm (unsafeCoerce e).target.value
-          --   , onBlur: mkEffFn1 \_ -> dispatch EmailConfirmUnfocused
-          --   , error: case emailAddress state.emailConfirm of
-          --       Nothing -> state.emailConfirmDirty == Just true
-          --       Just _ -> case state.emailDirty of
-          --         Nothing -> false
-          --         Just _ -> state.email /= state.emailConfirm
-          --   , name: "register-email-confirm"
-          --   , id: "register-email-confirm"
-          --   }
           , textField
             { label: R.text "Password"
             , fullWidth: true
@@ -297,13 +260,15 @@ spec
 
 
 register :: forall eff
-          . { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
-            , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-            , toRoot            :: Eff (Effects eff) Unit
-            , env               :: Env
+          . { registerQueues     :: RegisterSparrowClientQueues (Effects eff)
+            , errorMessageQueue  :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+            , emailSignal        :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
+            , emailConfirmSignal :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
+            , toRoot             :: Eff (Effects eff) Unit
+            , env                :: Env
             }
          -> R.ReactElement
-register {registerQueues,errorMessageQueue,toRoot,env} =
+register {registerQueues,errorMessageQueue,emailSignal,emailConfirmSignal,toRoot,env} =
   let {spec: reactSpec, dispatcher} =
         T.createReactSpec
           ( spec
@@ -313,17 +278,19 @@ register {registerQueues,errorMessageQueue,toRoot,env} =
             , env
             , emailSignal
             , emailConfirmSignal
+            , emailUpdatedQueue
+            , emailConfirmUpdatedQueue
             }
             ) initialState
-      -- reactSpec' =
-      --     Signal.whileMountedIxUUID
-      --       emailSignal
-      --       (\this x -> unsafeCoerceEff $ dispatcher this (ChangedEmail x))
-      --   $ Signal.whileMountedIxUUID
-      --       emailConfirmSignal
-      --       (\this x -> unsafeCoerceEff $ dispatcher this (ChangedEmailConfirm x))
-      --       reactSpec
-  in  R.createElement (R.createClass reactSpec) unit []
+      reactSpec' =
+          Queue.whileMountedIxUUID
+            emailUpdatedQueue
+            (\this _ -> unsafeCoerceEff $ dispatcher this ReRender)
+        $ Queue.whileMountedIxUUID
+            emailConfirmUpdatedQueue
+            (\this _ -> unsafeCoerceEff $ dispatcher this ReRender)
+            reactSpec
+  in  R.createElement (R.createClass reactSpec') unit []
   where
-    emailSignal = unsafePerformEff (IxSignal.make Nothing)
-    emailConfirmSignal = unsafePerformEff (IxSignal.make Nothing)
+    emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue

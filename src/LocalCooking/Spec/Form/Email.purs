@@ -19,6 +19,9 @@ import MaterialUI.TextField (textField)
 import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import Queue (READ)
+import IxQueue (IxQueue)
+import IxQueue as IxQueue
 
 
 
@@ -43,16 +46,18 @@ type Effects eff =
   | eff)
 
 spec :: forall eff
-      . { emailSignal :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
+      . { emailSignal  :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
         , parentSignal :: Maybe (IxSignal (Effects eff) (Maybe (Maybe EmailAddress)))
-        , label :: R.ReactElement
-        , fullWidth :: Boolean
-        , name :: String
-        , id :: String
+        , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+        , label        :: R.ReactElement
+        , fullWidth    :: Boolean
+        , name         :: String
+        , id           :: String
         } -> T.Spec (Effects eff) State Unit Action
 spec
   { emailSignal
   , parentSignal
+  , updatedQueue
   , label
   , fullWidth
   , name
@@ -68,6 +73,7 @@ spec
           Nothing -> IxSignal.set (Just Nothing) emailSignal
           Just e -> IxSignal.set (Just (Just e)) emailSignal
         performAction ReRender props state
+        liftEff $ IxQueue.broadcastIxQueue (IxQueue.allowWriting updatedQueue) unit
       ReRender -> void $ T.cotransform _ { rerender = unit }
 
     render :: T.Render State Unit Action
@@ -100,6 +106,7 @@ email :: forall eff
          , fullWidth :: Boolean
          , name :: String
          , id :: String
+         , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
          , emailSignal :: IxSignal (Effects eff) (Maybe (Maybe EmailAddress))
          , parentSignal :: Maybe (IxSignal (Effects eff) (Maybe (Maybe EmailAddress))) --for confirm
          } -> R.ReactElement

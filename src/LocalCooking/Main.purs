@@ -194,7 +194,7 @@ defaultMain
       case getUserDetailsLink x of
         Just _ -> do
           case preliminaryAuthToken of
-            PreliminaryAuthToken (Just (Right _)) -> do
+            PreliminaryAuthToken Nothing -> do
               log "didn't replace state?"
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
@@ -204,7 +204,7 @@ defaultMain
             _ -> pure x
         _ | x == registerLink -> do
           case preliminaryAuthToken of
-            PreliminaryAuthToken Nothing -> do
+            PreliminaryAuthToken (Just (Right _)) -> do
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
               replaceState' (rootLink :: siteLinks) h
