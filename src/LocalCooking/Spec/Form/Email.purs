@@ -58,6 +58,7 @@ spec
   where
     performAction action props state = case action of
       ChangedEmail e -> do
+        liftEff $ IxSignal.set Nothing emailSignal
         void $ T.cotransform _ { email = e }
       EmailUnfocused -> liftEff $ case emailAddress state.email of
         Nothing -> IxSignal.set (Just Nothing) emailSignal
