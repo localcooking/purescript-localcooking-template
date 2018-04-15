@@ -459,6 +459,7 @@ app :: forall eff siteLinks userDetailsLinks
        , preliminaryAuthToken :: PreliminaryAuthToken
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
        , authTokenSignal      :: IxSignal (Effects eff) (Maybe AuthToken)
+       , userEmailSignal      :: IxSignal (Effects eff) (Maybe EmailAddress)
        , authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
        , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
        , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
@@ -522,6 +523,7 @@ app
   , preliminaryAuthToken
   , errorMessageQueue
   , authTokenSignal
+  , userEmailSignal
   , authTokenQueues
   , registerQueues
   , userEmailQueues
@@ -580,6 +582,3 @@ app
   where
     loginPendingSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
     loginPendingSignal = unsafePerformEff One.newQueue
-
-    userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
-    userEmailSignal = unsafePerformEff (IxSignal.make Nothing)

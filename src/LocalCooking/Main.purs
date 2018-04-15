@@ -372,6 +372,7 @@ defaultMain
           , preliminaryAuthToken
           , errorMessageQueue
           , authTokenSignal
+          , userEmailSignal
           , authTokenQueues
           , registerQueues
           , userEmailQueues
