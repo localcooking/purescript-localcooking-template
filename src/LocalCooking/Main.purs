@@ -340,7 +340,8 @@ defaultMain
   -- user details fetcher and oblitorator
   let userDetailsOnAuth mAuth = case mAuth of
         Nothing -> IxSignal.set Nothing userEmailSignal
-        Just authToken ->
+        Just authToken -> do
+          log "fetching email..."
           OneIO.callAsyncEff userEmailQueues
             (\mInitOut -> case mInitOut of
                 Nothing -> do
