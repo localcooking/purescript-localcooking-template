@@ -343,16 +343,18 @@ defaultMain
         Just authToken -> do
           log "fetching email..."
           OneIO.callAsyncEff userEmailQueues
-            (\mInitOut -> case mInitOut of
-                Nothing -> do
-                  IxSignal.set Nothing userEmailSignal
-                  One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
-                Just initOut -> case initOut of
-                  UserEmailInitOutSuccess email ->
-                    IxSignal.set (Just email) userEmailSignal
-                  UserEmailInitOutNoAuth -> do
+            (\mInitOut -> do
+                log $ "received: " <> show mInitOut
+                case mInitOut of
+                  Nothing -> do
                     IxSignal.set Nothing userEmailSignal
-                    One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth)
+                    One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
+                  Just initOut -> case initOut of
+                    UserEmailInitOutSuccess email ->
+                      IxSignal.set (Just email) userEmailSignal
+                    UserEmailInitOutNoAuth -> do
+                      IxSignal.set Nothing userEmailSignal
+                      One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth)
             )
             (UserEmailInitIn authToken)
   IxSignal.subscribe userDetailsOnAuth authTokenSignal

@@ -5,6 +5,7 @@ import LocalCooking.Common.AuthToken (AuthToken)
 import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Argonaut (class EncodeJson, class DecodeJson, encodeJson, decodeJson, fail, (:=), (~>), jsonEmptyObject, (.?))
+import Data.Generic (class Generic, gShow)
 import Text.Email.Validate (EmailAddress, emailAddress)
 import Control.Alternative ((<|>))
 import Sparrow.Client.Queue (SparrowStaticClientQueues)
@@ -19,6 +20,11 @@ instance encodeJsonUserEmailInitIn :: EncodeJson UserEmailInitIn where
 data UserEmailInitOut
   = UserEmailInitOutNoAuth
   | UserEmailInitOutSuccess EmailAddress
+
+derive instance genericUserEmailInitOut :: Generic UserEmailInitOut
+
+instance showUserEmailInitOut :: Show UserEmailInitOut where
+  show = gShow
 
 instance decodeJsonUserEmailInitOut :: DecodeJson UserEmailInitOut where
   decodeJson json = do
