@@ -5,7 +5,7 @@ import LocalCooking.Spec.Content.Register (register)
 import LocalCooking.Spec.Content.UserDetails.Security (security)
 import LocalCooking.Spec.Dialogs.Login (loginDialog)
 import LocalCooking.Spec.Drawers.LeftMenu (leftMenu)
-import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..), UserEmailError (..), RedirectError (RedirectLogout))
+import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..), RedirectError (RedirectLogout))
 import LocalCooking.Spec.Flags.USA (usaFlag, usaFlagViewBox)
 import LocalCooking.Spec.Flags.Colorado (coloradoFlag, coloradoFlagViewBox)
 import LocalCooking.Window (WindowSize (Laptop))
@@ -18,7 +18,7 @@ import LocalCooking.Client.Dependencies.AuthToken
   , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenDeltaOut (..)
   )
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
-import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitIn (..), UserEmailInitOut (..))
+import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
 
 import Sparrow.Client.Queue (callSparrowClientQueues)
 
@@ -66,7 +66,6 @@ import Crypto.Scrypt (SCRYPT)
 
 import Queue (READ, WRITE)
 import Queue.One as One
-import Queue.One.Aff as OneIO
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 
@@ -383,6 +382,9 @@ spec
                       Just d
                         | d == userDetailsSecurityLink ->
                           [ security
+                            { env
+                            , errorMessageQueue: One.writeOnly errorMessageQueue
+                            }
                           ]
                         | otherwise -> def
                       _ -> def

@@ -1,13 +1,46 @@
 module LocalCooking.Spec.Content.UserDetails.Security where
 
+import LocalCooking.Spec.Content.Register.Pending (pending)
+import LocalCooking.Spec.Form.Email (email)
+import LocalCooking.Spec.Form.Password (password)
+import LocalCooking.Spec.Form.Submit (submit)
+import LocalCooking.Spec.Snackbar (SnackbarMessage)
+import LocalCooking.Types.Env (Env)
+import LocalCooking.Common.Password (hashPassword)
+
 import Prelude
+import Data.Maybe (Maybe (..))
+import Data.Either (Either (..))
+import Data.UUID (genUUID, GENUUID)
+import Text.Email.Validate (EmailAddress)
+import Control.Monad.Base (liftBase)
+import Control.Monad.Aff (runAff_)
+import Control.Monad.Eff (Eff)
+import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.Eff.Ref (REF)
+import Control.Monad.Eff.Uncurried (mkEffFn1)
+import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
+import Control.Monad.Eff.Exception (EXCEPTION)
 
 import Thermite as T
 import React as R
 import React.DOM as R
+import React.DOM.Props as RP
 
+import MaterialUI.Types (createStyles)
 import MaterialUI.Typography (typography)
 import MaterialUI.Typography as Typography
+import MaterialUI.Button as Button
+import MaterialUI.Divider (divider)
+import MaterialUI.Grid (grid)
+import MaterialUI.Grid as Grid
+
+import IxSignal.Internal (IxSignal)
+import IxSignal.Internal as IxSignal
+import Queue (WRITE, READ)
+import Queue.One as One
+import IxQueue (IxQueue)
+import IxQueue as IxQueue
 
 
 
@@ -20,9 +53,47 @@ initialState = unit
 type Action = Unit
 
 
+type Effects eff =
+  ( ref :: REF
+  , uuid :: GENUUID
+  , exception :: EXCEPTION
+  | eff)
+
+
 spec :: forall eff
-      . T.Spec eff State Unit Action
-spec = T.simpleSpec performAction render
+      . -- { -- registerQueues           :: RegisterSparrowClientQueues (Effects eff)
+        { errorMessageQueue        :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+        -- , toRoot                   :: Eff (Effects eff) Unit
+        , env                      :: Env
+        , emailSignal              :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+        , emailConfirmSignal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+        , passwordSignal              :: IxSignal (Effects eff) String
+        , passwordConfirmSignal       :: IxSignal (Effects eff) String
+        , submitDisabledSignal     :: IxSignal (Effects eff) Boolean
+        , pendingSignal            :: IxSignal (Effects eff) Boolean
+        , submitQueue              :: IxQueue (read :: READ) (Effects eff) Unit
+        , emailUpdatedQueue        :: IxQueue (read :: READ) (Effects eff) Unit
+        , emailConfirmUpdatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+        , passwordUpdatedQueue        :: IxQueue (read :: READ) (Effects eff) Unit
+        , passwordConfirmUpdatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+        } -> T.Spec (Effects eff) State Unit Action
+spec
+  -- { registerQueues
+  { errorMessageQueue
+  -- , toRoot
+  , env
+  , emailSignal
+  , emailConfirmSignal
+  , passwordSignal
+  , passwordConfirmSignal
+  , submitDisabledSignal
+  , pendingSignal
+  , submitQueue
+  , emailUpdatedQueue
+  , emailConfirmUpdatedQueue
+  , passwordUpdatedQueue
+  , passwordConfirmUpdatedQueue
+  } = T.simpleSpec performAction render
   where
     performAction action props state = pure unit
 
@@ -32,14 +103,103 @@ spec = T.simpleSpec performAction render
         { variant: Typography.display1
         , align: Typography.center
         } [R.text "Security"]
-      -- , textField
-      --   { label: R.text "Email Address"
-      --   , onChange: 
-      --   }
+      , R.div [RP.style {marginBotton: "1em"}] []
+      , divider {}
+      , grid
+        { spacing: Grid.spacing8
+        , container: true
+        , justify: Grid.centerJustify
+        }
+        [ grid
+          { xs: 6
+          , item: true
+          }
+          [ email
+            { label: R.text "Email"
+            , fullWidth: true
+            , name: "register-email"
+            , id: "register-email"
+            , emailSignal
+            , parentSignal: Nothing
+            , updatedQueue: emailUpdatedQueue
+            }
+          , email
+            { label: R.text "Email Confirm"
+            , fullWidth: true
+            , name: "register-email-confirm"
+            , id: "register-email-confirm"
+            , emailSignal: emailConfirmSignal
+            , parentSignal: Just emailSignal
+            , updatedQueue: emailConfirmUpdatedQueue
+            }
+          , password
+            { label: R.text "Password"
+            , fullWidth: true
+            , name: "register-password"
+            , id: "register-password"
+            , passwordSignal
+            , parentSignal: Nothing
+            , updatedQueue: passwordUpdatedQueue
+            }
+          , password
+            { label: R.text "Password Confirm"
+            , fullWidth: true
+            , name: "register-password-confirm"
+            , id: "register-password-confirm"
+            , passwordSignal: passwordConfirmSignal
+            , parentSignal: Just passwordSignal
+            , updatedQueue: passwordConfirmUpdatedQueue
+            }
+          , submit
+            { color: Button.secondary
+            , variant: Button.raised
+            , size: Button.large
+            , style: createStyles {marginTop: "1em"}
+            , disabledSignal: submitDisabledSignal
+            , triggerQueue: submitQueue
+            } [R.text "Submit"]
+          ]
+        ]
+      , pending
+        { pendingSignal
+        }
       ]
 
 
-security :: R.ReactElement
-security =
-  let {spec: reactSpec, dispatcher} = T.createReactSpec spec initialState
+security :: forall eff
+          . { errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+            , env               :: Env
+            }
+         -> R.ReactElement
+security {errorMessageQueue,env} =
+  let {spec: reactSpec, dispatcher} =
+        T.createReactSpec
+          ( spec
+            { env
+            , errorMessageQueue
+            , emailSignal
+            , emailConfirmSignal
+            , passwordSignal
+            , passwordConfirmSignal
+            , submitDisabledSignal
+            , pendingSignal
+            , submitQueue
+            , emailUpdatedQueue
+            , emailConfirmUpdatedQueue
+            , passwordUpdatedQueue
+            , passwordConfirmUpdatedQueue
+            } )
+          initialState
   in  R.createElement (R.createClass reactSpec) unit []
+  where
+    emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
+    emailConfirmSignal = unsafePerformEff $ IxSignal.make $ Left ""
+    passwordSignal = unsafePerformEff (IxSignal.make "")
+    passwordConfirmSignal = unsafePerformEff (IxSignal.make "")
+    submitDisabledSignal = unsafePerformEff (IxSignal.make true)
+    pendingSignal = unsafePerformEff (IxSignal.make false)
+    emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue

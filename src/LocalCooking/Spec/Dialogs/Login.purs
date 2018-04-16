@@ -20,7 +20,7 @@ import Data.URI.URI (print) as URI
 import Data.URI.Location (Location)
 import Data.UUID (genUUID, GENUUID)
 import Data.Time.Duration (Milliseconds (..))
-import Text.Email.Validate (EmailAddress, emailAddress)
+import Text.Email.Validate (EmailAddress)
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Aff (Aff, delay)
@@ -49,9 +49,6 @@ import MaterialUI.DialogTitle (dialogTitle)
 import MaterialUI.DialogActions (dialogActions)
 import MaterialUI.Button (button)
 import MaterialUI.Button as Button
-import MaterialUI.Input as Input
-import MaterialUI.TextField (textField)
-import MaterialUI.CircularProgress (circularProgress)
 import Crypto.Scrypt (SCRYPT)
 
 import Queue.One (READ, Queue)
@@ -59,7 +56,6 @@ import IxQueue (IxQueue)
 import IxQueue as IxQueue
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
-import Unsafe.Coerce (unsafeCoerce)
 
 
 

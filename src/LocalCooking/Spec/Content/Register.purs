@@ -15,38 +15,28 @@ import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
 import Data.UUID (genUUID, GENUUID)
-import Text.Email.Validate (EmailAddress, emailAddress)
-import Control.Monad.Base (liftBase)
+import Text.Email.Validate (EmailAddress)
 import Control.Monad.Aff (runAff_)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Ref (REF)
-import Control.Monad.Eff.Console (CONSOLE)
-import Control.Monad.Eff.Uncurried (mkEffFn1)
-import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
+import Control.Monad.Eff.Unsafe (unsafePerformEff)
 import Control.Monad.Eff.Exception (EXCEPTION, throwException)
 
 import Thermite as T
 import React as R
 import React.DOM as R
 import React.DOM.Props as RP
-import React.Signal.WhileMounted as Signal
-import React.Queue.WhileMounted as Queue
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Typography (typography)
 import MaterialUI.Typography as Typography
-import MaterialUI.Button (button)
 import MaterialUI.Button as Button
 import MaterialUI.Divider (divider)
-import MaterialUI.TextField (textField)
-import MaterialUI.Input as Input
 import MaterialUI.Grid (grid)
 import MaterialUI.Grid as Grid
-import MaterialUI.CircularProgress (circularProgress)
 import Crypto.Scrypt (SCRYPT)
 
-import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 import Queue (WRITE, READ)
