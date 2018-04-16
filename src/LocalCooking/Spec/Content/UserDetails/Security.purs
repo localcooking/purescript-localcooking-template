@@ -105,61 +105,50 @@ spec
         } [R.text "Security"]
       , R.div [RP.style {marginBotton: "1em"}] []
       , divider {}
-      , grid
-        { spacing: Grid.spacing8
-        , container: true
-        , justify: Grid.centerJustify
+      , email
+        { label: R.text "Email"
+        , fullWidth: true
+        , name: "register-email"
+        , id: "register-email"
+        , emailSignal
+        , parentSignal: Nothing
+        , updatedQueue: emailUpdatedQueue
         }
-        [ grid
-          { xs: 6
-          , item: true
-          }
-          [ email
-            { label: R.text "Email"
-            , fullWidth: true
-            , name: "register-email"
-            , id: "register-email"
-            , emailSignal
-            , parentSignal: Nothing
-            , updatedQueue: emailUpdatedQueue
-            }
-          , email
-            { label: R.text "Email Confirm"
-            , fullWidth: true
-            , name: "register-email-confirm"
-            , id: "register-email-confirm"
-            , emailSignal: emailConfirmSignal
-            , parentSignal: Just emailSignal
-            , updatedQueue: emailConfirmUpdatedQueue
-            }
-          , password
-            { label: R.text "Password"
-            , fullWidth: true
-            , name: "register-password"
-            , id: "register-password"
-            , passwordSignal
-            , parentSignal: Nothing
-            , updatedQueue: passwordUpdatedQueue
-            }
-          , password
-            { label: R.text "Password Confirm"
-            , fullWidth: true
-            , name: "register-password-confirm"
-            , id: "register-password-confirm"
-            , passwordSignal: passwordConfirmSignal
-            , parentSignal: Just passwordSignal
-            , updatedQueue: passwordConfirmUpdatedQueue
-            }
-          , submit
-            { color: Button.secondary
-            , variant: Button.raised
-            , size: Button.large
-            , style: createStyles {marginTop: "1em"}
-            , disabledSignal: submitDisabledSignal
-            , triggerQueue: submitQueue
-            } [R.text "Submit"]
-          ]
-        ]
+      , email
+        { label: R.text "Email Confirm"
+        , fullWidth: true
+        , name: "register-email-confirm"
+        , id: "register-email-confirm"
+        , emailSignal: emailConfirmSignal
+        , parentSignal: Just emailSignal
+        , updatedQueue: emailConfirmUpdatedQueue
+        }
+      , password
+        { label: R.text "Password"
+        , fullWidth: true
+        , name: "register-password"
+        , id: "register-password"
+        , passwordSignal
+        , parentSignal: Nothing
+        , updatedQueue: passwordUpdatedQueue
+        }
+      , password
+        { label: R.text "Password Confirm"
+        , fullWidth: true
+        , name: "register-password-confirm"
+        , id: "register-password-confirm"
+        , passwordSignal: passwordConfirmSignal
+        , parentSignal: Just passwordSignal
+        , updatedQueue: passwordConfirmUpdatedQueue
+        }
+      , submit
+        { color: Button.secondary
+        , variant: Button.raised
+        , size: Button.large
+        , style: createStyles {marginTop: "1em"}
+        , disabledSignal: submitDisabledSignal
+        , triggerQueue: submitQueue
+        } [R.text "Submit"]
       , pending
         { pendingSignal
         }
@@ -203,3 +192,22 @@ security {errorMessageQueue,env} =
     passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    _ = unsafePerformEff $ do
+      k <- show <$> genUUID
+      let submitValue = do
+            mEmail <- IxSignal.get emailSignal
+            confirm <- IxSignal.get emailConfirmSignal
+            case mEmail of
+              Right (Just _) -> do
+                p1 <- IxSignal.get passwordSignal
+                if p1 == ""
+                  then IxSignal.set true submitDisabledSignal
+                  else do
+                    p2 <- IxSignal.get passwordConfirmSignal
+                    IxSignal.set (mEmail /= confirm || p1 /= p2) submitDisabledSignal
+              _ -> IxSignal.set true submitDisabledSignal
+      IxQueue.onIxQueue emailUpdatedQueue k \_ -> submitValue
+      IxQueue.onIxQueue emailConfirmUpdatedQueue k \_ -> submitValue
+      IxQueue.onIxQueue passwordUpdatedQueue k \_ -> submitValue
+      IxQueue.onIxQueue passwordConfirmUpdatedQueue k \_ -> submitValue
+      IxSignal.subscribe (\_ -> submitValue) passwordConfirmSignal
