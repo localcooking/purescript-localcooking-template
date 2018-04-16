@@ -244,7 +244,7 @@ register
                   then IxSignal.set true submitDisabledSignal
                   else do
                     p2 <- IxSignal.get passwordConfirmSignal
-                    IxSignal.set (mEmail /= confirm && p1 /= p2) submitDisabledSignal
+                    IxSignal.set (mEmail /= confirm || p1 /= p2) submitDisabledSignal
               _ -> IxSignal.set true submitDisabledSignal
       IxQueue.onIxQueue emailUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue emailConfirmUpdatedQueue k \_ -> submitValue
