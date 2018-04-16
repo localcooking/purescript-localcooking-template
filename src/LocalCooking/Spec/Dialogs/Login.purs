@@ -345,3 +345,4 @@ loginDialog
               _ -> IxSignal.set true submitDisabledSignal
       IxQueue.onIxQueue emailQueue k \_ -> submitValue
       IxQueue.onIxQueue passwordQueue k \_ -> submitValue
+      IxSignal.subscribe (\_ -> submitValue) passwordSignal

@@ -15,6 +15,7 @@ import React.DOM as R
 import MaterialUI.Typography (typography)
 import MaterialUI.Typography as Typography
 import MaterialUI.TextField (textField)
+import MaterialUI.Input as Input
 
 import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
@@ -80,6 +81,7 @@ spec
         , fullWidth
         , onChange: mkEffFn1 \e -> dispatch $ ChangedPassword (unsafeCoerce e).target.value
         , onBlur: mkEffFn1 \_ -> dispatch PasswordUnfocused
+        , "type": Input.passwordType
         , error:
           let p = unsafePerformEff (IxSignal.get passwordSignal)
           in  case parentSignal of

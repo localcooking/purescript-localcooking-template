@@ -250,6 +250,7 @@ register
       IxQueue.onIxQueue emailConfirmUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue passwordUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue passwordConfirmUpdatedQueue k \_ -> submitValue
+      IxSignal.subscribe (\_ -> submitValue) passwordConfirmSignal
       IxQueue.onIxQueue submitQueue k \_ -> do
         IxSignal.set true pendingSignal
         mEmail <- IxSignal.get emailSignal
