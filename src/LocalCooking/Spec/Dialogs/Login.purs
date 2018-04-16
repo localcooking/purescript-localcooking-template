@@ -1,7 +1,10 @@
 module LocalCooking.Spec.Dialogs.Login where
 
+import LocalCooking.Spec.Content.Register.Pending (pending)
+import LocalCooking.Spec.Form.Email (email)
+import LocalCooking.Spec.Form.Password (password)
+import LocalCooking.Spec.Form.Submit (submit)
 import LocalCooking.Types.Env (Env)
-
 import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
 import LocalCooking.Links.Class (registerLink, toLocation, class LocalCookingSiteLinks, class ToLocation)
@@ -11,10 +14,11 @@ import LocalCooking.Common.Password (HashedPassword, hashPassword)
 
 import Prelude
 import Data.Maybe (Maybe (..))
+import Data.Either (Either (..))
 import Data.URI (URI)
 import Data.URI.URI (print) as URI
 import Data.URI.Location (Location)
-import Data.UUID (GENUUID)
+import Data.UUID (genUUID, GENUUID)
 import Data.Time.Duration (Milliseconds (..))
 import Text.Email.Validate (EmailAddress, emailAddress)
 import Control.Monad.Base (liftBase)
@@ -51,6 +55,8 @@ import MaterialUI.CircularProgress (circularProgress)
 import Crypto.Scrypt (SCRYPT)
 
 import Queue.One (READ, Queue)
+import IxQueue (IxQueue)
+import IxQueue as IxQueue
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 import Unsafe.Coerce (unsafeCoerce)
@@ -58,13 +64,9 @@ import Unsafe.Coerce (unsafeCoerce)
 
 
 type State siteLinks =
-  { open :: Boolean
-  , windowSize :: WindowSize
+  { open        :: Boolean
+  , windowSize  :: WindowSize
   , currentPage :: siteLinks
-  , email :: String
-  , emailDirty :: Maybe Boolean
-  , password :: String
-  , pending :: Boolean
   }
 
 
@@ -74,10 +76,6 @@ initialState {initWindowSize, initSiteLinks} =
   { open: false
   , windowSize: initWindowSize
   , currentPage: initSiteLinks
-  , email: ""
-  , emailDirty: Nothing
-  , password: ""
-  , pending: false
   }
 
 
@@ -86,9 +84,6 @@ data Action siteLinks
   | Close
   | ChangedWindowSize WindowSize
   | ChangedPage siteLinks
-  | ChangedEmail String
-  | EmailUnfocused
-  | ChangedPassword String
   | SubmitLogin
   | ClickedRegister
 
@@ -110,34 +105,55 @@ spec :: forall eff siteLinks userDetailsLinks
         , login :: EmailAddress -> HashedPassword -> Aff (Effects eff) Unit
         , toRegister :: Eff (Effects eff) Unit
         , env :: Env
+        , emailSignal :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+        , passwordSignal :: IxSignal (Effects eff) String
+        , pendingSignal :: IxSignal (Effects eff) Boolean
+        , submitDisabledSignal :: IxSignal (Effects eff) Boolean
+        , emailQueue :: IxQueue (read :: READ) (Effects eff) Unit
+        , passwordQueue :: IxQueue (read :: READ) (Effects eff) Unit
+        , submitQueue :: IxQueue (read :: READ) (Effects eff) Unit
         }
      -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
-spec {toURI,login,toRegister,env} = T.simpleSpec performAction render
+spec
+  { toURI
+  , login
+  , toRegister
+  , env
+  , emailSignal
+  , passwordSignal
+  , pendingSignal
+  , submitDisabledSignal
+  , emailQueue
+  , passwordQueue
+  , submitQueue
+  } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
       Open -> void $ T.cotransform _ { open = true }
       Close -> do
-        void $ T.cotransform _ { open = false, pending = false }
+        liftEff $ IxSignal.set false pendingSignal
+        void $ T.cotransform _ { open = false }
         liftBase $ delay $ Milliseconds 2000.0
-        void $ T.cotransform _ { email = "", password = "" }
+        liftEff $ do
+          IxSignal.set (Left "") emailSignal
+          IxSignal.set "" passwordSignal
       ChangedWindowSize w -> void $ T.cotransform _ { windowSize = w }
       ChangedPage p -> void $ T.cotransform _ { currentPage = p }
-      ChangedEmail e -> void $ T.cotransform _ { email = e, emailDirty = Just false }
       ClickedRegister -> do
         liftEff toRegister
         performAction Close props state
-      EmailUnfocused -> void $ T.cotransform _ { emailDirty = Just true }
-      ChangedPassword p -> void $ T.cotransform _ { password = p }
       SubmitLogin -> do
-        void $ T.cotransform _ { pending = true }
-        case emailAddress state.email of
-          Nothing -> liftEff $ log "bad email!" -- FIXME bug out somehow?
-          Just email -> do
+        mEmail <- liftEff $ do
+          IxSignal.set true pendingSignal
+          IxSignal.get emailSignal
+        case mEmail of
+          Right (Just email) -> do
             liftBase $ do
-              hashedPassword <- hashPassword {salt: env.salt, password: state.password}
+              password <- liftEff (IxSignal.get passwordSignal)
+              hashedPassword <- hashPassword {salt: env.salt, password}
               login email hashedPassword
             performAction Close props state
-            -- liftEff $ replaceState' state.currentPage -- FIXME weird password triggering
+          _ -> liftEff $ log "bad email!" -- FIXME bug out somehow?
 
     render :: T.Render (State siteLinks) Unit (Action siteLinks)
     render dispatch props state children =
@@ -152,30 +168,30 @@ spec {toURI,login,toRegister,env} = T.simpleSpec performAction render
                 dialog
                   { open: state.open
                   , fullWidth: true
-                  , onClose: mkEffFn1 \_ ->
-                      when (not state.pending) (dispatch Close)
+                  , onClose: mkEffFn1 \_ -> do
+                      pending <- unsafeCoerceEff $ IxSignal.get pendingSignal
+                      when (not pending) (dispatch Close)
                   }
         in  dialog'
             [ dialogTitle {} [R.text "Login"]
             , dialogContent {style: createStyles {position: "relative"}}
-              [ textField
+              [ email
                 { label: R.text "Email"
                 , fullWidth: true
-                , onChange: mkEffFn1 \e -> dispatch $ ChangedEmail (unsafeCoerce e).target.value
-                , onBlur: mkEffFn1 \_ -> dispatch EmailUnfocused
-                , error: case emailAddress state.email of
-                  Nothing -> state.emailDirty == Just true
-                  Just _ -> false
                 , name: "login-email"
                 , id: "login-email"
+                , emailSignal
+                , parentSignal: Nothing
+                , updatedQueue: emailQueue
                 }
-              , textField
+              , password
                 { label: R.text "Password"
                 , fullWidth: true
-                , "type": Input.passwordType
-                , onChange: mkEffFn1 \p -> dispatch $ ChangedPassword (unsafeCoerce p).target.value
                 , name: "login-password"
                 , id: "login-password"
+                , passwordSignal
+                , parentSignal: Nothing
+                , updatedQueue: passwordQueue
                 }
               , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em"}] $
                   let mkFab mainColor darkColor icon mLink =
@@ -210,25 +226,9 @@ spec {toURI,login,toRegister,env} = T.simpleSpec performAction render
                       , mkFab "#1da1f3" "#0f8cdb" twitterIcon Nothing
                       , mkFab "#dd4e40" "#c13627" googleIcon Nothing
                       ]
-              , if state.pending
-                   then R.div
-                          [ RP.style
-                            { zIndex: 1000
-                            , position: "absolute"
-                            , top: "0"
-                            , left: "0"
-                            , right: "0"
-                            , bottom: "0"
-                            , display: "flex"
-                            , flexDirection: "column"
-                            , alignItems: "center"
-                            , justifyContent: "center"
-                            , background: "rgba(255,255,255, 0.6)"
-                            }
-                          ]
-                          [ circularProgress {size: 50}
-                          ]
-                   else R.text ""
+              , pending
+                { pendingSignal
+                }
               ]
             , dialogActions {}
               [ button
@@ -239,13 +239,21 @@ spec {toURI,login,toRegister,env} = T.simpleSpec performAction render
                     dispatch ClickedRegister
                 , href: URI.print $ toURI $ toLocation $ registerLink :: siteLinks
                 } [R.text "Register"]
-              , button
+              , submit
                 { color: Button.primary
-                , disabled: case emailAddress state.email of
-                  Nothing -> state.password == ""
-                  Just _ -> false
-                , onTouchTap: mkEffFn1 \_ -> dispatch SubmitLogin
+                , variant: Button.flat
+                , size: Button.medium
+                , style: createStyles {}
+                , triggerQueue: submitQueue
+                , disabledSignal: submitDisabledSignal
                 } [R.text "Submit"]
+                -- button
+                -- { color: Button.primary
+                -- , disabled: case emailAddress state.email of
+                --   Nothing -> state.password == ""
+                --   Just _ -> false
+                -- , onTouchTap: mkEffFn1 \_ -> dispatch SubmitLogin
+                -- } [R.text "Submit"]
               , button
                 { color: Button.default
                 , onTouchTap: mkEffFn1 \_ -> dispatch Close
@@ -283,7 +291,19 @@ loginDialog
         }
       {spec: reactSpec, dispatcher} =
         T.createReactSpec
-          (spec {toURI,login,toRegister,env})
+          ( spec
+            { toURI
+            , login
+            , toRegister
+            , env
+            , emailSignal
+            , passwordSignal
+            , submitDisabledSignal
+            , emailQueue
+            , passwordQueue
+            , pendingSignal
+            , submitQueue
+            } )
           (initialState init)
       reactSpecLogin =
           Signal.whileMountedIxUUID
@@ -292,6 +312,9 @@ loginDialog
         $ Signal.whileMountedIxUUID
             currentPageSignal
             (\this x -> unsafeCoerceEff $ dispatcher this (ChangedPage x))
+        $ Queue.whileMountedIxUUID
+            submitQueue
+            (\this _ -> unsafeCoerceEff $ dispatcher this SubmitLogin)
         -- FIXME listen on authTokenSignal
         -- $ Signal.whileMountedIxUUID
         --     userDetailsSignal
@@ -303,3 +326,22 @@ loginDialog
             (\this _ -> unsafeCoerceEff $ dispatcher this Open)
             reactSpec
   in  R.createElement (R.createClass reactSpecLogin) unit []
+  where
+    emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
+    passwordSignal = unsafePerformEff $ IxSignal.make ""
+    submitDisabledSignal = unsafePerformEff $ IxSignal.make false
+    emailQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    pendingSignal = unsafePerformEff (IxSignal.make false)
+    submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    _ = unsafePerformEff $ do
+      k <- show <$> genUUID
+      let submitValue = do
+            mEmail <- IxSignal.get emailSignal
+            case mEmail of
+              Right (Just _) -> do
+                p1 <- IxSignal.get passwordSignal
+                IxSignal.set (p1 == "") submitDisabledSignal
+              _ -> IxSignal.set true submitDisabledSignal
+      IxQueue.onIxQueue emailQueue k \_ -> submitValue
+      IxQueue.onIxQueue passwordQueue k \_ -> submitValue
