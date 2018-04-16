@@ -3,9 +3,11 @@ module LocalCooking.Spec.Content.Register.Pending where
 import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
+import Data.UUID (GENUUID)
 import Text.Email.Validate (EmailAddress, emailAddress)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 
@@ -13,6 +15,7 @@ import Thermite as T
 import React as R
 import React.DOM as R
 import React.DOM.Props as RP
+import React.Signal.WhileMounted as Signal
 
 import MaterialUI.Typography (typography)
 import MaterialUI.Typography as Typography
@@ -40,6 +43,8 @@ data Action
 
 type Effects eff =
   ( ref :: REF
+  , exception :: EXCEPTION
+  , uuid :: GENUUID
   | eff)
 
 
@@ -85,4 +90,9 @@ pending {pendingSignal} =
         }
       {spec: reactSpec, dispatcher} =
         T.createReactSpec (spec {pendingSignal}) (initialState init)
-  in  R.createElement (R.createClass reactSpec) unit []
+      reactSpec' =
+           Signal.whileMountedIxUUID
+             pendingSignal
+             (\this x -> unsafeCoerceEff $ dispatcher this (ChangedPending x))
+             reactSpec
+  in  R.createElement (R.createClass reactSpec') unit []

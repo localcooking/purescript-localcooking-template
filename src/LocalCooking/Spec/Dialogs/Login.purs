@@ -247,13 +247,6 @@ spec
                 , triggerQueue: submitQueue
                 , disabledSignal: submitDisabledSignal
                 } [R.text "Submit"]
-                -- button
-                -- { color: Button.primary
-                -- , disabled: case emailAddress state.email of
-                --   Nothing -> state.password == ""
-                --   Just _ -> false
-                -- , onTouchTap: mkEffFn1 \_ -> dispatch SubmitLogin
-                -- } [R.text "Submit"]
               , button
                 { color: Button.default
                 , onTouchTap: mkEffFn1 \_ -> dispatch Close
