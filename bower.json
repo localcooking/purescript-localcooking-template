@@ -10,7 +10,7 @@
     "purescript-sparrow": "git@git.localcooking.com:tooling/purescript-sparrow.git#c90698b4a1e204846e6f660d839bd25a6dd2e8ce",
     "purescript-sparrow-queue": "git@git.localcooking.com:tooling/purescript-sparrow-queue.git#944bdb26b68cbfd6805063a8c3e0007e351bff0b",
     "purescript-localcooking-shared": "git@git.localcooking.com:localcooking/purescript-localcooking-shared.git",
-    "purescript-material-ui": "git://github.com/athanclark/purescript-material-ui.git#8a81c508b2603b6204f5400468c865ed8380fb24",
+    "purescript-material-ui": "git://github.com/athanclark/purescript-material-ui.git#0bd75f1cd80896786e502adbba84a268c26c431c",
     "purescript-prelude": "^3.2.0",
     "purescript-uri": "git@git.localcooking.com:private-tooling/purescript-uri.git",
     "purescript-uri-extra": "git@git.localcooking.com:private-tooling/purescript-uri-extra.git",
