@@ -97,7 +97,7 @@ spec
                   Just e2 -> e /= e2
         , name
         , id
-        }
+        } []
       ]
 
 

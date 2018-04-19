@@ -91,7 +91,7 @@ spec
               in  p /= p2
         , name
         , id
-        }
+        } []
       ]
 
 
