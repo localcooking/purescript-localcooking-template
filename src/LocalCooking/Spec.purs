@@ -350,7 +350,7 @@ spec
                           ]
                         ]
                       ]
-                  , R.div [RP.style {position: "absolute", left: "200px", top: "1em", paddingLeft: "1em"}] $
+                  , R.div [RP.style {position: "absolute", left: "216px", top: "1em", paddingLeft: "1em"}] $
                     -- TODO pack currentPageSignal listener to this level, so side buttons
                     -- aren't redrawn
                     let  def =
