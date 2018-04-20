@@ -350,7 +350,7 @@ spec
                           ]
                         ]
                       ]
-                  , R.div [RP.style {position: "absolute", left: "230px", top: "1em"}] $
+                  , R.div [RP.style {position: "absolute", left: "200px", top: "1em", paddingLeft: "1em"}] $
                     -- TODO pack currentPageSignal listener to this level, so side buttons
                     -- aren't redrawn
                     let  def =
@@ -414,7 +414,7 @@ spec
             }
             [ R.text "Proudly made in Golden, Colorado, The United States of America."
             ]
-          , R.div [RP.style {textAlign: "center"}]
+          , R.div [RP.style {textAlign: "center", marginTop: "1em"}]
             [ RS.svg
                 [ RP.viewBox coloradoFlagViewBox
                 , RP.width (show flagWidth)
