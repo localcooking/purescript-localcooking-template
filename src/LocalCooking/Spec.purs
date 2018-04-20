@@ -301,52 +301,54 @@ spec
               } $ case getUserDetailsLink state.currentPage of
                 Just mUserDetails ->
                   -- TODO responsive design
-                  [ Drawer.withStyles
-                    (\_ -> {paper: createStyles {position: "relative", width: "200px", zIndex: 1000}})
-                    \{classes} -> drawer
-                      { variant: Drawer.permanent
-                      , anchor: Drawer.left
-                      , classes: Drawer.createClasses classes
-                      }
-                      [ list {} $
-                        [ listItem
-                          { button: true
-                          , onClick: mkEffFn1 \_ -> unsafeCoerceEff
-                                                  $ siteLinks $ userDetailsLink
-                                                  $ Just userDetailsGeneralLink
-                          }
-                          [ listItemText
-                            { primary: "General"
+                  [ R.div [RP.style {position: "relative"}]
+                    [ Drawer.withStyles
+                      (\_ -> {paper: createStyles {position: "relative", width: "200px", zIndex: 1000}})
+                      \{classes} -> drawer
+                        { variant: Drawer.permanent
+                        , anchor: Drawer.left
+                        , classes: Drawer.createClasses classes
+                        }
+                        [ list {} $
+                          [ listItem
+                            { button: true
+                            , onClick: mkEffFn1 \_ -> unsafeCoerceEff
+                                                    $ siteLinks $ userDetailsLink
+                                                    $ Just userDetailsGeneralLink
                             }
-                          ]
-                        , divider {}
-                        , listItem
-                          { button: true
-                          , onClick: mkEffFn1 \_ -> unsafeCoerceEff
-                                                  $ siteLinks $ userDetailsLink
-                                                  $ Just userDetailsSecurityLink
-                          }
-                          [ listItemText
-                            { primary: "Security"
-                            }
-                          ]
-                        , divider {}
-                        ] <> userDetails.buttons
-                              { siteLinks
-                              , currentPageSignal
-                              , windowSizeSignal
-                              , authTokenSignal
-                              , userEmailSignal
-                              , toURI
+                            [ listItemText
+                              { primary: "General"
                               }
-                          <>
-                        [ listItem
-                          { button: true
-                          , onClick: mkEffFn1 \_ -> dispatch Logout
-                          }
-                          [ listItemText
-                            { primary: "Logout"
+                            ]
+                          , divider {}
+                          , listItem
+                            { button: true
+                            , onClick: mkEffFn1 \_ -> unsafeCoerceEff
+                                                    $ siteLinks $ userDetailsLink
+                                                    $ Just userDetailsSecurityLink
                             }
+                            [ listItemText
+                              { primary: "Security"
+                              }
+                            ]
+                          , divider {}
+                          ] <> userDetails.buttons
+                                { siteLinks
+                                , currentPageSignal
+                                , windowSizeSignal
+                                , authTokenSignal
+                                , userEmailSignal
+                                , toURI
+                                }
+                            <>
+                          [ listItem
+                            { button: true
+                            , onClick: mkEffFn1 \_ -> dispatch Logout
+                            }
+                            [ listItemText
+                              { primary: "Logout"
+                              }
+                            ]
                           ]
                         ]
                       ]

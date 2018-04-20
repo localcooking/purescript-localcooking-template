@@ -140,6 +140,7 @@ defaultMain :: forall eff siteLinks userDetailsLinks
             => Eq siteLinks
             => ToLocation siteLinks
             => FromLocation siteLinks
+            => Show siteLinks
             => LocalCookingArgs siteLinks (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain
@@ -215,6 +216,7 @@ defaultMain
 
     sig <- IxSignal.make initSiteLink
     flip onPopState w \(siteLink :: siteLinks) -> do
+      log $ "site link: " <> show siteLink
       let continue x = do
             setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
             IxSignal.set x sig
