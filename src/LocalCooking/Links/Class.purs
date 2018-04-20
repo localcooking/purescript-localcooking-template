@@ -5,7 +5,7 @@ import Data.URI.Location (Location, printLocation, parseLocation)
 import Data.URI.Location as Location
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
-import Data.Foreign (toForeign, unsafeFromForeign)
+import Data.Foreign (toForeign, unsafeFromForeign, isNull)
 import Data.Argonaut (encodeJson, decodeJson)
 import Type.Proxy (Proxy (..))
 import Text.Parsing.StringParser (Parser, runParser, try)
@@ -115,13 +115,16 @@ replaceState' x h = do
     h
 
 
-onPopState :: forall eff siteLinks
+onPopState :: forall eff siteLinks userDetailsLinks
             . FromLocation siteLinks
+           => LocalCookingSiteLinks siteLinks userDetailsLinks
            => (siteLinks -> Eff (dom :: DOM, exception :: EXCEPTION, console :: CONSOLE | eff) Unit)
            -> Window
            -> Eff (dom :: DOM, exception :: EXCEPTION, console :: CONSOLE | eff) Unit
 onPopState go w =
-  onPopState' \fgn -> case decodeJson (unsafeFromForeign fgn) of
+  onPopState' \fgn -> if isNull fgn
+                         then go rootLink
+                         else case decodeJson (unsafeFromForeign fgn) of
     Left e -> do
       log (unsafeCoerce fgn)
       throw $ "onPopState decoding error: " <> e
