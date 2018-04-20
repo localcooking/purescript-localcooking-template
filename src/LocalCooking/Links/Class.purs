@@ -13,12 +13,14 @@ import Text.Parsing.StringParser.String (string, char, eof)
 import Text.Parsing.StringParser.Combinators (optionMaybe)
 import Control.Alternative ((<|>))
 import Control.Monad.Eff (Eff)
+import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (EXCEPTION, throw)
 import Control.Monad.Eff.Uncurried (mkEffFn1, runEffFn2)
 import DOM (DOM)
 import DOM.HTML.History (DocumentTitle (..), pushState, replaceState, URL (..))
 import DOM.HTML.Window.Extra (onPopStateImpl)
 import DOM.HTML.Types (History, HISTORY, Window)
+import Unsafe.Coerce (unsafeCoerce)
 
 
 
@@ -115,16 +117,18 @@ replaceState' x h = do
 
 onPopState :: forall eff siteLinks
             . FromLocation siteLinks
-           => (siteLinks -> Eff (dom :: DOM, exception :: EXCEPTION | eff) Unit)
+           => (siteLinks -> Eff (dom :: DOM, exception :: EXCEPTION, console :: CONSOLE | eff) Unit)
            -> Window
-           -> Eff (dom :: DOM, exception :: EXCEPTION | eff) Unit
+           -> Eff (dom :: DOM, exception :: EXCEPTION, console :: CONSOLE | eff) Unit
 onPopState go w =
   onPopState' \fgn -> case decodeJson (unsafeFromForeign fgn) of
-    Left e -> throw e
+    Left e -> do
+      log (unsafeCoerce fgn)
+      throw $ "onPopState decoding error: " <> e
     Right str -> case runParser parseLocation str of
-      Left e -> throw (show e)
+      Left e -> throw $ "onPopState location parsing error: " <> show e <> ", original: " <> str
       Right loc -> case fromLocation loc of
-        Left e -> throw e
+        Left e -> throw $ "onPopState fromLocation error: " <> e <> ", original: " <> show loc
         Right (x :: siteLinks) -> go x
   where
     onPopState' f = runEffFn2 onPopStateImpl (mkEffFn1 f) w
