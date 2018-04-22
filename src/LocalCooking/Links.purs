@@ -49,3 +49,10 @@ instance toLocationImageLinks :: ToLocation ImageLinks where
     IconPng -> Location (Right $ rootDir </> dir "static" </> dir "images" </> file "icon.png") Nothing Nothing
     IconSvg -> Location (Right $ rootDir </> dir "static" </> dir "images" </> file "icon.svg") Nothing Nothing
 
+
+data PolicyLinks
+  = PrivacyPolicyLink
+
+instance toLocationPolicyLinks :: ToLocation PolicyLinks where
+  toLocation x = case x of
+    PrivacyPolicyLink -> Location (Right $ rootDir </> file "privacypolicy.html") Nothing Nothing

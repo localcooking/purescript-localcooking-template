@@ -4,6 +4,7 @@ import LocalCooking.Spec.Topbar (topbar)
 import LocalCooking.Spec.Content.Register (register)
 import LocalCooking.Spec.Content.UserDetails.Security (security)
 import LocalCooking.Spec.Dialogs.Login (loginDialog)
+import LocalCooking.Spec.Dialogs.PrivacyPolicy (privacyPolicyDialog)
 import LocalCooking.Spec.Drawers.LeftMenu (leftMenu)
 import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..), RedirectError (RedirectLogout))
 import LocalCooking.Spec.Flags.USA (usaFlag, usaFlagViewBox)
@@ -112,18 +113,19 @@ spec :: forall eff siteLinks userDetailsLinks
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => Eq siteLinks
      => ToLocation siteLinks
-     => { toURI              :: Location -> URI
-        , windowSizeSignal   :: IxSignal (Effects eff) WindowSize
-        , currentPageSignal  :: IxSignal (Effects eff) siteLinks
-        , siteLinks          :: siteLinks -> Eff (Effects eff) Unit
-        , development        :: Boolean
-        , authTokenQueues    :: AuthTokenSparrowClientQueues (Effects eff)
-        , registerQueues     :: RegisterSparrowClientQueues (Effects eff)
-        , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
-        , errorMessageQueue  :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
-        , loginPendingSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
-        , authTokenSignal    :: IxSignal (Effects eff) (Maybe AuthToken)
-        , userEmailSignal    :: IxSignal (Effects eff) (Maybe EmailAddress)
+     => { toURI               :: Location -> URI
+        , windowSizeSignal    :: IxSignal (Effects eff) WindowSize
+        , currentPageSignal   :: IxSignal (Effects eff) siteLinks
+        , privacyPolicySignal :: IxSignal (Effects eff) Boolean
+        , authTokenSignal     :: IxSignal (Effects eff) (Maybe AuthToken)
+        , userEmailSignal     :: IxSignal (Effects eff) (Maybe EmailAddress)
+        , siteLinks           :: siteLinks -> Eff (Effects eff) Unit
+        , development         :: Boolean
+        , authTokenQueues     :: AuthTokenSparrowClientQueues (Effects eff)
+        , registerQueues      :: RegisterSparrowClientQueues (Effects eff)
+        , userEmailQueues     :: UserEmailSparrowClientQueues (Effects eff)
+        , errorMessageQueue   :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
+        , loginPendingSignal  :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
         , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -186,6 +188,7 @@ spec
   , loginPendingSignal
   , authTokenSignal
   , userEmailSignal
+  , privacyPolicySignal
   , templateArgs: templateArgs@{palette,content,userDetails}
   , env
   , extendedNetwork
@@ -239,8 +242,8 @@ spec
       ] <> mainContent <>
       [ loginDialog
         { openLoginSignal: One.readOnly openLoginSignal
-        , windowSizeSignal
         , toURI
+        , windowSizeSignal
         , currentPageSignal
         , login: \email password -> makeAff \resolve -> do
             unsafeCoerceEff $ dispatch $ CallAuthToken $ AuthTokenInitInLogin {email,password}
@@ -248,6 +251,12 @@ spec
             pure nonCanceler
         , toRegister: siteLinks registerLink
         , env
+        }
+      , privacyPolicyDialog
+        { toURI
+        , privacyPolicySignal
+        , windowSizeSignal
+        , currentPageSignal
         }
       , leftMenu
         { mobileDrawerOpenSignal: One.readOnly mobileMenuButtonSignal
@@ -448,6 +457,7 @@ app :: forall eff siteLinks userDetailsLinks
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
        , authTokenSignal      :: IxSignal (Effects eff) (Maybe AuthToken)
        , userEmailSignal      :: IxSignal (Effects eff) (Maybe EmailAddress)
+       , privacyPolicySignal  :: IxSignal (Effects eff) Boolean
        , authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
        , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
        , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
@@ -512,6 +522,7 @@ app
   , errorMessageQueue
   , authTokenSignal
   , userEmailSignal
+  , privacyPolicySignal
   , authTokenQueues
   , registerQueues
   , userEmailQueues
@@ -529,6 +540,7 @@ app
           { toURI
           , windowSizeSignal
           , currentPageSignal
+          , privacyPolicySignal
           , siteLinks
           , development
           , errorMessageQueue

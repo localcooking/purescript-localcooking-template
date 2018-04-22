@@ -27,6 +27,7 @@ import Data.Int.Parse (parseInt, toRadix)
 import Data.UUID (GENUUID)
 import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
+import Data.Argonaut (jsonParser, decodeJson, encodeJson)
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
@@ -58,7 +59,7 @@ import Signal.DOM (windowDimensions)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
-import Browser.WebStorage (WEB_STORAGE)
+import Browser.WebStorage (WEB_STORAGE, getItem, setItem, localStorage, StorageKey (..))
 import WebSocket (WEBSOCKET)
 import Network.HTTP.Affjax (AJAX)
 import Crypto.Scrypt (SCRYPT)
@@ -185,6 +186,19 @@ defaultMain
 
   ( userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
     ) <- IxSignal.make Nothing
+
+  ( privacyPolicySignal :: IxSignal (Effects eff) Boolean
+    ) <- do
+    mX <- getItem localStorage (StorageKey "privacypolicy")
+    let x = case mX of
+          Nothing -> true
+          Just s -> case jsonParser s >>= decodeJson of
+            Left _ -> true
+            Right b -> b
+    IxSignal.make x
+
+  IxSignal.subscribe
+    (setItem localStorage (StorageKey "privacypolicy") <<< show <<< encodeJson) privacyPolicySignal
 
   -- for `back` compatibility while being driven by `siteLinksSignal`
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks
@@ -375,6 +389,7 @@ defaultMain
           , errorMessageQueue
           , authTokenSignal
           , userEmailSignal
+          , privacyPolicySignal
           , authTokenQueues
           , registerQueues
           , userEmailQueues
