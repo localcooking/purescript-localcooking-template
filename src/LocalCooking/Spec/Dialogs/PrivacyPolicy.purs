@@ -130,7 +130,10 @@ spec
         in  dialog'
             [ dialogTitle {} [R.text "Privacy Policy"]
             , dialogContent {style: createStyles {position: "relative"}}
-              [ R.iframe [RP.src $ URI.print $ toURI $ toLocation PrivacyPolicyLink] []
+              [ R.iframe
+                [ RP.src $ URI.print $ toURI $ toLocation PrivacyPolicyLink
+                , RP.style {width: "100%", border: "1px solid black"}
+                ] []
               ]
             , dialogActions {}
               [ button
