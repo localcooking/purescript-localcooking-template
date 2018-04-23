@@ -200,24 +200,29 @@ security {errorMessageQueue,env} =
     passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+
     _ = unsafePerformEff $ do
       k <- show <$> genUUID
       let submitValue = do
             mEmail <- IxSignal.get emailSignal
             confirm <- IxSignal.get emailConfirmSignal
-            case mEmail of
+            x <- case mEmail of
               Right (Just _) -> do
                 p1 <- IxSignal.get passwordSignal
                 if p1 == ""
-                  then IxSignal.set true submitDisabledSignal
+                  then pure true
                   else do
                     p2 <- IxSignal.get passwordConfirmSignal
-                    IxSignal.set (mEmail /= confirm || p1 /= p2) submitDisabledSignal
-              _ -> IxSignal.set true submitDisabledSignal
+                    pure (mEmail /= confirm || p1 /= p2)
+              _ -> pure true
+            IxSignal.set x submitDisabledSignal
       IxQueue.onIxQueue emailUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue emailConfirmUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue passwordUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue passwordConfirmUpdatedQueue k \_ -> submitValue
+      IxSignal.subscribe (\_ -> submitValue) emailSignal
+      IxSignal.subscribe (\_ -> submitValue) emailConfirmSignal
+      IxSignal.subscribe (\_ -> submitValue) passwordSignal
       IxSignal.subscribe (\_ -> submitValue) passwordConfirmSignal
       IxQueue.onIxQueue submitQueue k \_ -> do
         eEmail <- IxSignal.get emailSignal

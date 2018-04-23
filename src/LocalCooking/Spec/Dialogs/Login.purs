@@ -326,9 +326,6 @@ loginDialog
                 Nothing -> unsafeCoerceEff $ dispatcher this Close
                 Just _ -> One.putQueue passwordErrorQueue unit
                 )
-        -- $ Queue.whileMountedOne
-        --     openLoginSignal
-        --     (\this _ -> unsafeCoerceEff $ dispatcher this Open)
             reactSpec
   in  R.createElement (R.createClass reactSpecLogin) unit []
   where
@@ -340,15 +337,18 @@ loginDialog
     passwordErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
     pendingSignal = unsafePerformEff (IxSignal.make false)
     submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+
     _ = unsafePerformEff $ do
       k <- show <$> genUUID
       let submitValue = do
             mEmail <- IxSignal.get emailSignal
-            case mEmail of
+            x <- case mEmail of
               Right (Just _) -> do
                 p1 <- IxSignal.get passwordSignal
-                IxSignal.set (p1 == "") submitDisabledSignal
-              _ -> IxSignal.set true submitDisabledSignal
+                pure (p1 == "")
+              _ -> pure true
+            IxSignal.set x submitDisabledSignal
       IxQueue.onIxQueue emailQueue k \_ -> submitValue
       IxQueue.onIxQueue passwordQueue k \_ -> submitValue
+      IxSignal.subscribe (\_ -> submitValue) emailSignal
       IxSignal.subscribe (\_ -> submitValue) passwordSignal

@@ -16,17 +16,18 @@ import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
 import Data.UUID (genUUID, GENUUID)
 import Text.Email.Validate (EmailAddress)
-import Control.Monad.Aff (runAff_)
+import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Ref (REF)
-import Control.Monad.Eff.Unsafe (unsafePerformEff)
-import Control.Monad.Eff.Exception (EXCEPTION, throwException)
+import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
+import Control.Monad.Eff.Exception (EXCEPTION)
 
 import Thermite as T
 import React as R
 import React.DOM as R
 import React.DOM.Props as RP
+import React.Queue.WhileMounted as Queue
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Typography (typography)
@@ -51,7 +52,8 @@ type State = Unit
 initialState :: State
 initialState = unit
 
-type Action = Unit
+data Action
+  = SubmitRegister
 
 
 type Effects eff =
@@ -104,7 +106,37 @@ spec
   , submit
   } = T.simpleSpec performAction render
   where
-    performAction action props state = pure unit
+    performAction action props state = case action of
+      SubmitRegister -> do
+        liftEff $ IxSignal.set true pendingSignal
+        mEmail <- liftEff $ IxSignal.get email.signal
+        case mEmail of
+          Right (Just email) -> do
+            mReCaptcha <- liftEff $ IxSignal.get reCaptchaSignal
+            case mReCaptcha of
+              Just reCaptcha -> do
+                passwordString <- liftEff (IxSignal.get password.signal)
+                mErr <- liftBase $ do
+                  password <- liftBase $ hashPassword
+                    { password: passwordString
+                    , salt: env.salt
+                    }
+                  OneIO.callAsync registerQueues $ RegisterInitIn {email,password,reCaptcha}
+                liftEff $ do
+                  case mErr of
+                    Nothing -> pure unit
+                    Just initOut -> One.putQueue errorMessageQueue $ case initOut of
+                      RegisterInitOutEmailSent ->
+                        SnackbarMessageRegister Nothing
+                      RegisterInitOutBadCaptcha ->
+                        SnackbarMessageRegister $
+                          Just RegisterErrorBadCaptchaResponse
+                      RegisterInitOutDBError e ->
+                        SnackbarMessageRegister $
+                          Just RegisterErrorEmailInUse
+                  IxSignal.set false pendingSignal
+              _ -> pure unit
+          _ -> pure unit
 
     render :: T.Render State Unit Action
     render dispatch props state children =
@@ -228,7 +260,12 @@ register
             , reCaptchaSignal
             , pendingSignal
             } ) initialState
-  in  R.createElement (R.createClass reactSpec) unit []
+      reactSpec' =
+        Queue.whileMountedIxUUID
+          submitQueue
+          (\this _ -> unsafeCoerceEff $ dispatcher this SubmitRegister)
+          reactSpec
+  in  R.createElement (R.createClass reactSpec') unit []
   where
     emailSignal = unsafePerformEff (IxSignal.make (Left ""))
     emailConfirmSignal = unsafePerformEff (IxSignal.make (Left ""))
@@ -242,54 +279,27 @@ register
     passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+
     _ = unsafePerformEff $ do
       k <- show <$> genUUID
       let submitValue = do
             mEmail <- IxSignal.get emailSignal
             confirm <- IxSignal.get emailConfirmSignal
-            case mEmail of
+            x <- case mEmail of
               Right (Just _) -> do
                 p1 <- IxSignal.get passwordSignal
                 if p1 == ""
-                  then IxSignal.set true submitDisabledSignal
+                  then pure true
                   else do
                     p2 <- IxSignal.get passwordConfirmSignal
-                    IxSignal.set (mEmail /= confirm || p1 /= p2) submitDisabledSignal
-              _ -> IxSignal.set true submitDisabledSignal
+                    pure (mEmail /= confirm || p1 /= p2)
+              _ -> pure true
+            IxSignal.set x submitDisabledSignal
       IxQueue.onIxQueue emailUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue emailConfirmUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue passwordUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue passwordConfirmUpdatedQueue k \_ -> submitValue
+      IxSignal.subscribe (\_ -> submitValue) emailSignal
+      IxSignal.subscribe (\_ -> submitValue) emailConfirmSignal
+      IxSignal.subscribe (\_ -> submitValue) passwordSignal
       IxSignal.subscribe (\_ -> submitValue) passwordConfirmSignal
-      IxQueue.onIxQueue submitQueue k \_ -> do
-        IxSignal.set true pendingSignal
-        mEmail <- IxSignal.get emailSignal
-        case mEmail of
-          Right (Just email) -> do
-            mReCaptcha <- IxSignal.get reCaptchaSignal
-            case mReCaptcha of
-              Nothing -> pure unit
-              Just reCaptcha -> do
-                let resolve eMErr = case eMErr of
-                      Left e -> throwException e
-                      Right mErr -> do
-                        IxSignal.set false pendingSignal
-                        case mErr of
-                          Nothing -> pure unit
-                          Just initOut -> One.putQueue errorMessageQueue $ case initOut of
-                            RegisterInitOutEmailSent ->
-                                SnackbarMessageRegister Nothing
-                            RegisterInitOutBadCaptcha ->
-                                SnackbarMessageRegister
-                              $ Just RegisterErrorBadCaptchaResponse
-                            RegisterInitOutDBError e ->
-                                SnackbarMessageRegister
-                              $ Just RegisterErrorEmailInUse
-                runAff_ resolve $ do
-                  passwordString <- liftEff (IxSignal.get passwordSignal)
-                  password <- hashPassword
-                    { password: passwordString
-                    , salt: env.salt
-                    }
-                  OneIO.callAsync registerQueues $ RegisterInitIn {email,password,reCaptcha}
-          _ -> pure unit
