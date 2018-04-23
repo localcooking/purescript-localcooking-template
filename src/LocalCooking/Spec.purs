@@ -114,13 +114,14 @@ spec :: forall eff siteLinks userDetailsLinks
      => Eq siteLinks
      => ToLocation siteLinks
      => { toURI               :: Location -> URI
+        , siteLinks           :: siteLinks -> Eff (Effects eff) Unit
+        , env                 :: Env
+        , development         :: Boolean
         , windowSizeSignal    :: IxSignal (Effects eff) WindowSize
         , currentPageSignal   :: IxSignal (Effects eff) siteLinks
         , privacyPolicySignal :: IxSignal (Effects eff) Boolean
         , authTokenSignal     :: IxSignal (Effects eff) (Maybe AuthToken)
         , userEmailSignal     :: IxSignal (Effects eff) (Maybe EmailAddress)
-        , siteLinks           :: siteLinks -> Eff (Effects eff) Unit
-        , development         :: Boolean
         , authTokenQueues     :: AuthTokenSparrowClientQueues (Effects eff)
         , registerQueues      :: RegisterSparrowClientQueues (Effects eff)
         , userEmailQueues     :: UserEmailSparrowClientQueues (Effects eff)
@@ -171,7 +172,6 @@ spec :: forall eff siteLinks userDetailsLinks
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
           }
-        , env :: Env
         , extendedNetwork :: Array R.ReactElement
         }
      -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
@@ -449,15 +449,16 @@ app :: forall eff siteLinks userDetailsLinks
     => Eq siteLinks
     => ToLocation siteLinks
     => { toURI                :: Location -> URI
-       , windowSizeSignal     :: IxSignal (Effects eff) WindowSize
-       , currentPageSignal    :: IxSignal (Effects eff) siteLinks
        , siteLinks            :: siteLinks -> Eff (Effects eff) Unit
        , development          :: Boolean
+       , env                  :: Env
        , preliminaryAuthToken :: PreliminaryAuthToken
-       , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
+       , windowSizeSignal     :: IxSignal (Effects eff) WindowSize
+       , currentPageSignal    :: IxSignal (Effects eff) siteLinks
        , authTokenSignal      :: IxSignal (Effects eff) (Maybe AuthToken)
        , userEmailSignal      :: IxSignal (Effects eff) (Maybe EmailAddress)
        , privacyPolicySignal  :: IxSignal (Effects eff) Boolean
+       , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
        , authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
        , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
        , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
@@ -506,7 +507,6 @@ app :: forall eff siteLinks userDetailsLinks
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
           }
-       , env :: Env
        , extendedNetwork :: Array R.ReactElement
        }
     -> { spec :: R.ReactSpec Unit (State siteLinks) (Array R.ReactElement) (Effects eff)

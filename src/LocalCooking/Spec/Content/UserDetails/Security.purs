@@ -211,3 +211,8 @@ security {errorMessageQueue,env} =
       IxQueue.onIxQueue passwordUpdatedQueue k \_ -> submitValue
       IxQueue.onIxQueue passwordConfirmUpdatedQueue k \_ -> submitValue
       IxSignal.subscribe (\_ -> submitValue) passwordConfirmSignal
+      IxQueue.onIxQueue submitQueue k \_ -> do
+        eEmail <- IxSignal.get emailSignal
+        case eEmail of
+          Left _ -> pure unit
+          Right email -> pure unit -- TODO submit user details security change

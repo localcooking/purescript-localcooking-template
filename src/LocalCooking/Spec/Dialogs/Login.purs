@@ -253,13 +253,14 @@ spec
 
 
 
+-- TODO OneIO.IOQueues Unit {email :: EmailAddress, password :: HashedPassword}
 loginDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
             => { openLoginSignal   :: Queue (read :: READ) (Effects eff) Unit
                , windowSizeSignal  :: IxSignal (Effects eff) WindowSize
-               , toURI             :: Location -> URI
                , currentPageSignal :: IxSignal (Effects eff) siteLinks
+               , toURI             :: Location -> URI
                , login             :: EmailAddress -> HashedPassword -> Aff (Effects eff) Unit
                , toRegister        :: Eff (Effects eff) Unit
                , env               :: Env
