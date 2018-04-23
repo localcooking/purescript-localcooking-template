@@ -5,28 +5,17 @@ import LocalCooking.Types.Env (Env)
 
 import Prelude
 import Data.Maybe (Maybe (..))
-import Data.Either (Either (..))
-import Text.Email.Validate (EmailAddress, emailAddress)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
-import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 
 import Thermite as T
 import React as R
 import React.DOM as R
 import React.ReCaptcha as RG
 
-import MaterialUI.Typography (typography)
-import MaterialUI.Typography as Typography
-import MaterialUI.TextField (textField)
-
-import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
-import Queue (READ)
-import IxQueue (IxQueue)
-import IxQueue as IxQueue
 
 
 type State = Unit

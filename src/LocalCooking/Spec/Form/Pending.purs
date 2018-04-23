@@ -1,14 +1,9 @@
-module LocalCooking.Spec.Content.Register.Pending where
+module LocalCooking.Spec.Form.Pending where
 
 import Prelude
-import Data.Maybe (Maybe (..))
-import Data.Either (Either (..))
 import Data.UUID (GENUUID)
-import Text.Email.Validate (EmailAddress, emailAddress)
 import Control.Monad.Eff.Ref (REF)
-import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
-import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 
 import Thermite as T
@@ -17,16 +12,10 @@ import React.DOM as R
 import React.DOM.Props as RP
 import React.Signal.WhileMounted as Signal
 
-import MaterialUI.Typography (typography)
-import MaterialUI.Typography as Typography
 import MaterialUI.CircularProgress (circularProgress)
 
-import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
-import Queue (READ)
-import IxQueue (IxQueue)
-import IxQueue as IxQueue
 
 
 type State =

@@ -83,7 +83,7 @@ spec :: forall eff siteLinks userDetailsLinks
      => Eq siteLinks
      => ToLocation siteLinks
      => { toURI :: Location -> URI
-        , openLoginSignal :: Queue (write :: WRITE) (Effects eff) Unit
+        , openLogin :: Eff (Effects eff) Unit
         , siteLinks :: siteLinks -> Eff (Effects eff) Unit
         , mobileMenuButtonSignal :: Queue (write :: WRITE) (Effects eff) Unit
         , windowSizeSignal :: IxSignal (Effects eff) WindowSize
@@ -102,7 +102,7 @@ spec :: forall eff siteLinks userDetailsLinks
      -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
 spec
   { toURI
-  , openLoginSignal
+  , openLogin
   , siteLinks
   , mobileMenuButtonSignal
   , windowSizeSignal
@@ -114,7 +114,7 @@ spec
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
-      OpenLogin -> liftEff (putQueue openLoginSignal unit)
+      OpenLogin -> liftEff openLogin
       ClickedMobileMenuButton -> liftEff (putQueue mobileMenuButtonSignal unit)
       ChangedWindowSize w -> void $ T.cotransform _ { windowSize = w }
       ChangedCurrentPage x -> void $ T.cotransform _ { currentPage = x }
@@ -183,7 +183,7 @@ topbar :: forall eff siteLinks userDetailsLinks
        => Eq siteLinks
        => ToLocation siteLinks
        => { toURI :: Location -> URI
-          , openLoginSignal :: Queue (write :: WRITE) (Effects eff) Unit
+          , openLogin :: Eff (Effects eff) Unit
           , mobileMenuButtonSignal :: Queue (write :: WRITE) (Effects eff) Unit
           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
           , currentPageSignal :: IxSignal (Effects eff) siteLinks
@@ -201,7 +201,7 @@ topbar :: forall eff siteLinks userDetailsLinks
           } -> R.ReactElement
 topbar
   { toURI
-  , openLoginSignal
+  , openLogin
   , windowSizeSignal
   , siteLinks
   , mobileMenuButtonSignal
@@ -220,7 +220,7 @@ topbar
       {spec:reactSpec,dispatcher} = T.createReactSpec
         ( spec
           { toURI
-          , openLoginSignal
+          , openLogin
           , siteLinks
           , currentPageSignal
           , windowSizeSignal

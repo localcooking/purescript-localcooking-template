@@ -2,7 +2,6 @@ module LocalCooking.Spec.Form.Password where
 
 import Prelude
 import Data.Maybe (Maybe (..))
-import Data.Either (Either (..))
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
@@ -11,16 +10,16 @@ import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Thermite as T
 import React as R
 import React.DOM as R
+import React.Queue.WhileMounted as Queue
 
-import MaterialUI.Typography (typography)
-import MaterialUI.Typography as Typography
 import MaterialUI.TextField (textField)
 import MaterialUI.Input as Input
 
 import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
-import Queue (READ)
+import Queue (READ, WRITE)
+import Queue.One as One
 import IxQueue (IxQueue)
 import IxQueue as IxQueue
 
@@ -29,18 +28,21 @@ import IxQueue as IxQueue
 type State =
   { password :: String
   , rerender :: Unit
+  , error    :: Boolean
   }
 
 initialState :: {initPassword :: String} -> State
 initialState {initPassword} =
   { password: initPassword
   , rerender: unit
+  , error: false
   }
 
 data Action
   = ChangedPassword String
   | PasswordUnfocused
   | ReRender
+  | Error
 
 type Effects eff =
   ( ref :: REF
@@ -68,11 +70,12 @@ spec
     performAction action props state = case action of
       ChangedPassword e -> do
         liftEff $ IxSignal.set e passwordSignal
-        void $ T.cotransform _ { password = e }
+        void $ T.cotransform _ { password = e, error = false }
       PasswordUnfocused -> do
         performAction ReRender props state
         liftEff $ IxQueue.broadcastIxQueue (IxQueue.allowWriting updatedQueue) unit
       ReRender -> void $ T.cotransform _ { rerender = unit }
+      Error -> void $ T.cotransform _ { error = true }
 
     render :: T.Render State Unit Action
     render dispatch props state children =
@@ -84,11 +87,12 @@ spec
         , "type": Input.passwordType
         , error:
           let p = unsafePerformEff (IxSignal.get passwordSignal)
-          in  case parentSignal of
-            Nothing -> false
-            Just passwordConfirmSignal ->
-              let p2 = unsafePerformEff (IxSignal.get passwordConfirmSignal)
-              in  p /= p2
+              withParent = case parentSignal of
+                Nothing -> false
+                Just passwordConfirmSignal ->
+                  let p2 = unsafePerformEff (IxSignal.get passwordConfirmSignal)
+                  in  p /= p2
+          in  state.error || withParent
         , name
         , id
         } []
@@ -101,11 +105,21 @@ password :: forall eff
          , fullWidth      :: Boolean
          , name           :: String
          , id             :: String
+         , errorQueue     :: One.Queue (write :: WRITE) (Effects eff) Unit
          , updatedQueue   :: IxQueue (read :: READ) (Effects eff) Unit
          , passwordSignal :: IxSignal (Effects eff) String
          , parentSignal   :: Maybe (IxSignal (Effects eff) String) --for confirm
          } -> R.ReactElement
-password {label,fullWidth,name,id,updatedQueue,passwordSignal,parentSignal} =
+password
+  { label
+  , fullWidth
+  , name
+  , id
+  , updatedQueue
+  , passwordSignal
+  , parentSignal
+  , errorQueue
+  } =
   let init =
         { initPassword: unsafePerformEff (IxSignal.get passwordSignal)
         }
@@ -120,4 +134,9 @@ password {label,fullWidth,name,id,updatedQueue,passwordSignal,parentSignal} =
             , passwordSignal
             , parentSignal
             } ) (initialState init)
-  in  R.createElement (R.createClass reactSpec) unit []
+      reactSpec' =
+          Queue.whileMountedOne
+            (One.allowReading errorQueue)
+            (\this _ -> unsafeCoerceEff $ dispatcher this Error)
+            reactSpec
+  in  R.createElement (R.createClass reactSpec') unit []

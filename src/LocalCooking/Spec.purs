@@ -14,6 +14,7 @@ import LocalCooking.Types.Env (Env)
 import LocalCooking.Links.Class (registerLink, rootLink, userDetailsLink, getUserDetailsLink, userDetailsGeneralLink, userDetailsSecurityLink, class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Auth.Error (AuthError (AuthExistsFailure), PreliminaryAuthToken (..))
 import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.Password (HashedPassword)
 import LocalCooking.Client.Dependencies.AuthToken
   ( AuthTokenSparrowClientQueues
   , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenDeltaOut (..)
@@ -30,7 +31,6 @@ import Data.UUID (GENUUID)
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
 import Text.Email.Validate (EmailAddress)
-import Control.Monad.Aff (makeAff, nonCanceler)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Class (liftEff)
@@ -67,6 +67,7 @@ import Crypto.Scrypt (SCRYPT)
 
 import Queue (READ, WRITE)
 import Queue.One as One
+import Queue.One.Aff as OneIO
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 
@@ -90,10 +91,11 @@ initialState {initSiteLinks,initWindowSize} =
 
 data Action siteLinks
   = GotAuthToken (Maybe AuthToken)
-  | CallAuthToken AuthTokenInitIn
   | ChangedCurrentPage siteLinks
   | ChangedWindowSize WindowSize
   | Logout
+  | AttemptLogin
+  | CallAuthToken AuthTokenInitIn
 
 
 type Effects eff =
@@ -117,16 +119,21 @@ spec :: forall eff siteLinks userDetailsLinks
         , siteLinks           :: siteLinks -> Eff (Effects eff) Unit
         , env                 :: Env
         , development         :: Boolean
+        , errorMessageQueue   :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
         , windowSizeSignal    :: IxSignal (Effects eff) WindowSize
         , currentPageSignal   :: IxSignal (Effects eff) siteLinks
         , privacyPolicySignal :: IxSignal (Effects eff) Boolean
         , authTokenSignal     :: IxSignal (Effects eff) (Maybe AuthToken)
         , userEmailSignal     :: IxSignal (Effects eff) (Maybe EmailAddress)
-        , authTokenQueues     :: AuthTokenSparrowClientQueues (Effects eff)
-        , registerQueues      :: RegisterSparrowClientQueues (Effects eff)
-        , userEmailQueues     :: UserEmailSparrowClientQueues (Effects eff)
-        , errorMessageQueue   :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
-        , loginPendingSignal  :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
+        , dependencies ::
+          { authTokenQueues     :: AuthTokenSparrowClientQueues (Effects eff)
+          , registerQueues      :: RegisterSparrowClientQueues (Effects eff)
+          , userEmailQueues     :: UserEmailSparrowClientQueues (Effects eff)
+          }
+        , login ::
+          { loginDialogQueue  :: OneIO.IOQueues (Effects eff) Unit {email :: EmailAddress, password :: HashedPassword}
+          , returnLoginQueue  :: One.Queue (write :: WRITE) (Effects eff) (Maybe Unit)
+          }
         , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -181,11 +188,9 @@ spec
   , siteLinks
   , currentPageSignal
   , development
-  , authTokenQueues: authTokenQueues@{deltaIn: authTokenQueuesDeltaIn}
-  , registerQueues
-  , userEmailQueues
   , errorMessageQueue
-  , loginPendingSignal
+  , dependencies: dependencies@{authTokenQueues:{deltaIn: authTokenQueuesDeltaIn}}
+  , login
   , authTokenSignal
   , userEmailSignal
   , privacyPolicySignal
@@ -205,31 +210,37 @@ spec
         siteLinks rootLink
       -- Mapping between programmatic authToken signal and UI shared state & error signaling
       GotAuthToken mToken -> void $ T.cotransform _ { authToken = mToken }
+      AttemptLogin -> do
+        {email,password} <- liftBase $ OneIO.callAsync login.loginDialogQueue unit  
+        let initIn = AuthTokenInitInLogin {email,password}
+        performAction (CallAuthToken initIn) props state
       CallAuthToken initIn -> do
         let onDeltaOut deltaOut = case deltaOut of
               AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal -- TODO verify this is enough to trigger a complete remote logout
               AuthTokenDeltaOutNew authToken' -> pure unit -- FIXME TODO
-        mInitOut <- liftBase $ callSparrowClientQueues authTokenQueues onDeltaOut initIn
+        mInitOut <- liftBase $ callSparrowClientQueues dependencies.authTokenQueues onDeltaOut initIn
         liftEff $ do
           case mInitOut of
             Nothing -> do
               IxSignal.set Nothing authTokenSignal
               One.putQueue errorMessageQueue (SnackbarMessageAuthError AuthExistsFailure)
+              One.putQueue login.returnLoginQueue (Just unit)
             Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
               AuthTokenInitOutSuccess authToken -> do
                 IxSignal.set (Just authToken) authTokenSignal
+                One.putQueue login.returnLoginQueue Nothing
               AuthTokenInitOutFailure e -> do
                 unsubscribe
                 IxSignal.set Nothing authTokenSignal
                 One.putQueue errorMessageQueue (SnackbarMessageAuthFailure e)
-          One.putQueue loginPendingSignal unit
+                One.putQueue login.returnLoginQueue (Just unit)
 
 
     render :: T.Render (State siteLinks) Unit (Action siteLinks)
     render dispatch props state children = template $
       [ topbar
         { toURI
-        , openLoginSignal: One.writeOnly openLoginSignal
+        , openLogin: unsafeCoerceEff $ dispatch AttemptLogin
         , windowSizeSignal
         , siteLinks
         , mobileMenuButtonSignal: One.writeOnly mobileMenuButtonSignal
@@ -241,14 +252,11 @@ spec
         }
       ] <> mainContent <>
       [ loginDialog
-        { openLoginSignal: One.readOnly openLoginSignal
+        { loginDialogQueue: login.loginDialogQueue
+        , returnLoginQueue: login.returnLoginQueue
         , toURI
         , windowSizeSignal
         , currentPageSignal
-        , login: \email password -> makeAff \resolve -> do
-            unsafeCoerceEff $ dispatch $ CallAuthToken $ AuthTokenInitInLogin {email,password}
-            One.onQueue loginPendingSignal \_ -> resolve (Right unit)
-            pure nonCanceler
         , toRegister: siteLinks registerLink
         , env
         }
@@ -280,9 +288,6 @@ spec
               }
               (R.div [] xs)
           ]
-
-        openLoginSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
-        openLoginSignal = unsafePerformEff One.newQueue
 
         mobileMenuButtonSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
         mobileMenuButtonSignal = unsafePerformEff One.newQueue
@@ -387,7 +392,7 @@ spec
 
                 _ | state.currentPage == registerLink ->
                       [ register
-                        { registerQueues
+                        { registerQueues: dependencies.registerQueues
                         , errorMessageQueue: One.writeOnly errorMessageQueue
                         , toRoot: siteLinks rootLink
                         , env
@@ -459,9 +464,11 @@ app :: forall eff siteLinks userDetailsLinks
        , userEmailSignal      :: IxSignal (Effects eff) (Maybe EmailAddress)
        , privacyPolicySignal  :: IxSignal (Effects eff) Boolean
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
-       , authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
-       , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
-       , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
+       , dependencies ::
+          { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
+          , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
+          , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
+          }
        , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -523,9 +530,7 @@ app
   , authTokenSignal
   , userEmailSignal
   , privacyPolicySignal
-  , authTokenQueues
-  , registerQueues
-  , userEmailQueues
+  , dependencies
   , templateArgs
   , env
   , extendedNetwork
@@ -544,10 +549,11 @@ app
           , siteLinks
           , development
           , errorMessageQueue
-          , authTokenQueues
-          , registerQueues
-          , userEmailQueues
-          , loginPendingSignal
+          , dependencies
+          , login:
+            { loginDialogQueue
+            , returnLoginQueue
+            }
           , authTokenSignal
           , userEmailSignal
           , templateArgs
@@ -580,5 +586,8 @@ app
 
   in  {spec: reactSpec', dispatcher}
   where
-    loginPendingSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
-    loginPendingSignal = unsafePerformEff One.newQueue
+    loginDialogQueue :: OneIO.IOQueues (Effects eff) Unit {email :: EmailAddress, password :: HashedPassword}
+    loginDialogQueue = unsafePerformEff OneIO.newIOQueues
+
+    returnLoginQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe Unit)
+    returnLoginQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue

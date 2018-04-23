@@ -1,9 +1,9 @@
 module LocalCooking.Spec.Content.Register where
 
-import LocalCooking.Spec.Content.Register.Pending (pending)
-import LocalCooking.Spec.Form.Email (email)
-import LocalCooking.Spec.Form.Password (password)
-import LocalCooking.Spec.Form.Submit (submit)
+import LocalCooking.Spec.Form.Pending (pending)
+import LocalCooking.Spec.Form.Email as Email
+import LocalCooking.Spec.Form.Password as Password
+import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Spec.Google.ReCaptcha (reCaptcha)
 import LocalCooking.Spec.Snackbar (SnackbarMessage (SnackbarMessageRegister), RegisterError (..))
 import LocalCooking.Types.Env (Env)
@@ -67,36 +67,41 @@ spec :: forall eff
         , errorMessageQueue        :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
         , toRoot                   :: Eff (Effects eff) Unit
         , env                      :: Env
-        , emailSignal              :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
-        , emailConfirmSignal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
-        , passwordSignal              :: IxSignal (Effects eff) String
-        , passwordConfirmSignal       :: IxSignal (Effects eff) String
-        , submitDisabledSignal     :: IxSignal (Effects eff) Boolean
+        , email ::
+          { signal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+          , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+          }
+        , emailConfirm ::
+          { signal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+          , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+          }
+        , password ::
+          { signal       :: IxSignal (Effects eff) String
+          , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+          }
+        , passwordConfirm ::
+          { signal       :: IxSignal (Effects eff) String
+          , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+          }
+        , submit ::
+          { queue          :: IxQueue (read :: READ) (Effects eff) Unit
+          , disabledSignal :: IxSignal (Effects eff) Boolean
+          }
         , reCaptchaSignal          :: IxSignal (Effects eff) (Maybe ReCaptchaResponse)
         , pendingSignal            :: IxSignal (Effects eff) Boolean
-        , submitQueue              :: IxQueue (read :: READ) (Effects eff) Unit
-        , emailUpdatedQueue        :: IxQueue (read :: READ) (Effects eff) Unit
-        , emailConfirmUpdatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
-        , passwordUpdatedQueue        :: IxQueue (read :: READ) (Effects eff) Unit
-        , passwordConfirmUpdatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
         } -> T.Spec (Effects eff) State Unit Action
 spec
   { registerQueues
   , errorMessageQueue
   , toRoot
   , env
-  , emailSignal
-  , emailConfirmSignal
-  , passwordSignal
-  , passwordConfirmSignal
-  , submitDisabledSignal
   , reCaptchaSignal
   , pendingSignal
-  , submitQueue
-  , emailUpdatedQueue
-  , emailConfirmUpdatedQueue
-  , passwordUpdatedQueue
-  , passwordConfirmUpdatedQueue
+  , email
+  , emailConfirm
+  , password
+  , passwordConfirm
+  , submit
   } = T.simpleSpec performAction render
   where
     performAction action props state = pure unit
@@ -119,53 +124,55 @@ spec
           { xs: 6
           , item: true
           }
-          [ email
+          [ Email.email
             { label: R.text "Email"
             , fullWidth: true
             , name: "register-email"
             , id: "register-email"
-            , emailSignal
+            , emailSignal: email.signal
             , parentSignal: Nothing
-            , updatedQueue: emailUpdatedQueue
+            , updatedQueue: email.updatedQueue
             }
-          , email
+          , Email.email
             { label: R.text "Email Confirm"
             , fullWidth: true
             , name: "register-email-confirm"
             , id: "register-email-confirm"
-            , emailSignal: emailConfirmSignal
-            , parentSignal: Just emailSignal
-            , updatedQueue: emailConfirmUpdatedQueue
+            , emailSignal: emailConfirm.signal
+            , parentSignal: Just email.signal
+            , updatedQueue: emailConfirm.updatedQueue
             }
-          , password
+          , Password.password
             { label: R.text "Password"
             , fullWidth: true
             , name: "register-password"
             , id: "register-password"
-            , passwordSignal
+            , passwordSignal: password.signal
             , parentSignal: Nothing
-            , updatedQueue: passwordUpdatedQueue
+            , updatedQueue: password.updatedQueue
+            , errorQueue: passwordErrorQueue
             }
-          , password
+          , Password.password
             { label: R.text "Password Confirm"
             , fullWidth: true
             , name: "register-password-confirm"
             , id: "register-password-confirm"
-            , passwordSignal: passwordConfirmSignal
-            , parentSignal: Just passwordSignal
-            , updatedQueue: passwordConfirmUpdatedQueue
+            , passwordSignal: passwordConfirm.signal
+            , parentSignal: Just password.signal
+            , updatedQueue: passwordConfirm.updatedQueue
+            , errorQueue: passwordConfirmErrorQueue
             }
           , reCaptcha
             { reCaptchaSignal
             , env
             }
-          , submit
+          , Submit.submit
             { color: Button.secondary
             , variant: Button.raised
             , size: Button.large
             , style: createStyles {marginTop: "1em"}
-            , disabledSignal: submitDisabledSignal
-            , triggerQueue: submitQueue
+            , disabledSignal: submit.disabledSignal
+            , triggerQueue: submit.queue
             } [R.text "Submit"]
           ]
         ]
@@ -173,6 +180,9 @@ spec
         { pendingSignal
         }
       ]
+      where
+        passwordErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
+        passwordConfirmErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
 
 
 register :: forall eff
@@ -195,18 +205,28 @@ register
             , errorMessageQueue
             , toRoot
             , env
-            , emailSignal
-            , emailConfirmSignal
-            , passwordSignal
-            , passwordConfirmSignal
-            , submitDisabledSignal
+            , email:
+              { signal: emailSignal
+              , updatedQueue: emailUpdatedQueue
+              }
+            , emailConfirm:
+              { signal: emailConfirmSignal
+              , updatedQueue: emailConfirmUpdatedQueue
+              }
+            , password:
+              { signal: passwordSignal
+              , updatedQueue: passwordUpdatedQueue
+              }
+            , passwordConfirm:
+              { signal: passwordConfirmSignal
+              , updatedQueue: passwordConfirmUpdatedQueue
+              }
+            , submit:
+              { queue: submitQueue
+              , disabledSignal: submitDisabledSignal
+              }
             , reCaptchaSignal
             , pendingSignal
-            , submitQueue
-            , emailUpdatedQueue
-            , emailConfirmUpdatedQueue
-            , passwordUpdatedQueue
-            , passwordConfirmUpdatedQueue
             } ) initialState
   in  R.createElement (R.createClass reactSpec) unit []
   where

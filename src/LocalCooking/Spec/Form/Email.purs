@@ -7,14 +7,12 @@ import Text.Email.Validate (EmailAddress, emailAddress)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
-import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
+import Control.Monad.Eff.Unsafe (unsafePerformEff)
 
 import Thermite as T
 import React as R
 import React.DOM as R
 
-import MaterialUI.Typography (typography)
-import MaterialUI.Typography as Typography
 import MaterialUI.TextField (textField)
 
 import Unsafe.Coerce (unsafeCoerce)

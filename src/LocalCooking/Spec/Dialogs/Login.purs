@@ -1,9 +1,9 @@
 module LocalCooking.Spec.Dialogs.Login where
 
-import LocalCooking.Spec.Content.Register.Pending (pending)
-import LocalCooking.Spec.Form.Email (email)
-import LocalCooking.Spec.Form.Password (password)
-import LocalCooking.Spec.Form.Submit (submit)
+import LocalCooking.Spec.Form.Pending (pending)
+import LocalCooking.Spec.Form.Email as Email
+import LocalCooking.Spec.Form.Password as Password
+import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
@@ -23,7 +23,7 @@ import Data.Time.Duration (Milliseconds (..))
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
-import Control.Monad.Aff (Aff, delay)
+import Control.Monad.Aff (delay)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafeCoerceEff, unsafePerformEff)
 import Control.Monad.Eff.Ref (REF)
@@ -51,7 +51,9 @@ import MaterialUI.Button (button)
 import MaterialUI.Button as Button
 import Crypto.Scrypt (SCRYPT)
 
-import Queue.One (READ, Queue)
+import Queue (READ, WRITE)
+import Queue.One as One
+import Queue.One.Aff as OneIO
 import IxQueue (IxQueue)
 import IxQueue as IxQueue
 import IxSignal.Internal (IxSignal)
@@ -98,30 +100,34 @@ spec :: forall eff siteLinks userDetailsLinks
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => ToLocation siteLinks
      => { toURI :: Location -> URI
-        , login :: EmailAddress -> HashedPassword -> Aff (Effects eff) Unit
-        , toRegister :: Eff (Effects eff) Unit
         , env :: Env
-        , emailSignal :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
-        , passwordSignal :: IxSignal (Effects eff) String
+        , toRegister :: Eff (Effects eff) Unit
+        , loginDialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) {email :: EmailAddress, password :: HashedPassword}
+        , email ::
+          { signal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+          , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+          }
+        , password ::
+          { signal       :: IxSignal (Effects eff) String
+          , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+          , errorQueue   :: One.Queue (write :: WRITE) (Effects eff) Unit
+          }
+        , submit ::
+          { disabledSignal :: IxSignal (Effects eff) Boolean
+          , queue          :: IxQueue (read :: READ) (Effects eff) Unit
+          }
         , pendingSignal :: IxSignal (Effects eff) Boolean
-        , submitDisabledSignal :: IxSignal (Effects eff) Boolean
-        , emailQueue :: IxQueue (read :: READ) (Effects eff) Unit
-        , passwordQueue :: IxQueue (read :: READ) (Effects eff) Unit
-        , submitQueue :: IxQueue (read :: READ) (Effects eff) Unit
         }
      -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
 spec
   { toURI
-  , login
-  , toRegister
   , env
-  , emailSignal
-  , passwordSignal
+  , toRegister
+  , email
+  , password
+  , submit
   , pendingSignal
-  , submitDisabledSignal
-  , emailQueue
-  , passwordQueue
-  , submitQueue
+  , loginDialogOutputQueue
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
@@ -131,8 +137,8 @@ spec
         void $ T.cotransform _ { open = false }
         liftBase $ delay $ Milliseconds 2000.0
         liftEff $ do
-          IxSignal.set (Left "") emailSignal
-          IxSignal.set "" passwordSignal
+          IxSignal.set (Left "") email.signal
+          IxSignal.set "" password.signal
       ChangedWindowSize w -> void $ T.cotransform _ { windowSize = w }
       ChangedPage p -> void $ T.cotransform _ { currentPage = p }
       ClickedRegister -> do
@@ -141,14 +147,13 @@ spec
       SubmitLogin -> do
         mEmail <- liftEff $ do
           IxSignal.set true pendingSignal
-          IxSignal.get emailSignal
+          IxSignal.get email.signal
         case mEmail of
           Right (Just email) -> do
             liftBase $ do
-              password <- liftEff (IxSignal.get passwordSignal)
+              password <- liftEff (IxSignal.get password.signal)
               hashedPassword <- hashPassword {salt: env.salt, password}
-              login email hashedPassword
-            performAction Close props state
+              liftEff $ One.putQueue loginDialogOutputQueue {email,password: hashedPassword}
           _ -> liftEff $ log "bad email!" -- FIXME bug out somehow?
 
     render :: T.Render (State siteLinks) Unit (Action siteLinks)
@@ -171,23 +176,24 @@ spec
         in  dialog'
             [ dialogTitle {} [R.text "Login"]
             , dialogContent {style: createStyles {position: "relative"}}
-              [ email
+              [ Email.email
                 { label: R.text "Email"
                 , fullWidth: true
                 , name: "login-email"
                 , id: "login-email"
-                , emailSignal
+                , emailSignal: email.signal
                 , parentSignal: Nothing
-                , updatedQueue: emailQueue
+                , updatedQueue: email.updatedQueue
                 }
-              , password
+              , Password.password
                 { label: R.text "Password"
                 , fullWidth: true
                 , name: "login-password"
                 , id: "login-password"
-                , passwordSignal
+                , passwordSignal: password.signal
                 , parentSignal: Nothing
-                , updatedQueue: passwordQueue
+                , updatedQueue: password.updatedQueue
+                , errorQueue: password.errorQueue
                 }
               , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em"}] $
                   let mkFab mainColor darkColor icon mLink =
@@ -235,13 +241,13 @@ spec
                     dispatch ClickedRegister
                 , href: URI.print $ toURI $ toLocation $ registerLink :: siteLinks
                 } [R.text "Register"]
-              , submit
+              , Submit.submit
                 { color: Button.primary
                 , variant: Button.flat
                 , size: Button.medium
                 , style: createStyles {}
-                , triggerQueue: submitQueue
-                , disabledSignal: submitDisabledSignal
+                , triggerQueue: submit.queue
+                , disabledSignal: submit.disabledSignal
                 } [R.text "Submit"]
               , button
                 { color: Button.default
@@ -253,27 +259,26 @@ spec
 
 
 
--- TODO OneIO.IOQueues Unit {email :: EmailAddress, password :: HashedPassword}
 loginDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
-            => { openLoginSignal   :: Queue (read :: READ) (Effects eff) Unit
+            => { loginDialogQueue  :: OneIO.IOQueues (Effects eff) Unit {email :: EmailAddress, password :: HashedPassword}
+               , returnLoginQueue  :: One.Queue (write :: WRITE) (Effects eff) (Maybe Unit)
                , windowSizeSignal  :: IxSignal (Effects eff) WindowSize
                , currentPageSignal :: IxSignal (Effects eff) siteLinks
                , toURI             :: Location -> URI
-               , login             :: EmailAddress -> HashedPassword -> Aff (Effects eff) Unit
-               , toRegister        :: Eff (Effects eff) Unit
                , env               :: Env
+               , toRegister        :: Eff (Effects eff) Unit
                }
             -> R.ReactElement
 loginDialog
-  { openLoginSignal
+  { loginDialogQueue: OneIO.IOQueues {input: loginDialogInputQueue, output: loginDialogOutputQueue}
+  , returnLoginQueue
   , windowSizeSignal
-  , toURI
   , currentPageSignal
-  , login
-  , toRegister
+  , toURI
   , env
+  , toRegister
   } =
   let init =
         { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
@@ -283,16 +288,23 @@ loginDialog
         T.createReactSpec
           ( spec
             { toURI
-            , login
-            , toRegister
             , env
-            , emailSignal
-            , passwordSignal
-            , submitDisabledSignal
-            , emailQueue
-            , passwordQueue
+            , toRegister
+            , email:
+              { signal: emailSignal
+              , updatedQueue: emailQueue
+              }
+            , password:
+              { signal: passwordSignal
+              , updatedQueue: passwordQueue
+              , errorQueue: passwordErrorQueue
+              }
+            , submit:
+              { queue: submitQueue
+              , disabledSignal: submitDisabledSignal
+              }
             , pendingSignal
-            , submitQueue
+            , loginDialogOutputQueue
             } )
           (initialState init)
       reactSpecLogin =
@@ -302,18 +314,21 @@ loginDialog
         $ Signal.whileMountedIxUUID
             currentPageSignal
             (\this x -> unsafeCoerceEff $ dispatcher this (ChangedPage x))
+        $ Queue.whileMountedOne
+            loginDialogInputQueue
+            (\this _ -> unsafeCoerceEff $ dispatcher this Open)
         $ Queue.whileMountedIxUUID
             submitQueue
             (\this _ -> unsafeCoerceEff $ dispatcher this SubmitLogin)
-        -- FIXME listen on authTokenSignal
-        -- $ Signal.whileMountedIxUUID
-        --     userDetailsSignal
-        --     (\this x -> unsafeCoerceEff $ case x of
-        --         Nothing -> pure unit
-        --         Just _ -> dispatcher this Close)
         $ Queue.whileMountedOne
-            openLoginSignal
-            (\this _ -> unsafeCoerceEff $ dispatcher this Open)
+            (One.allowReading returnLoginQueue)
+            (\this mErr -> case mErr of
+                Nothing -> unsafeCoerceEff $ dispatcher this Close
+                Just _ -> One.putQueue passwordErrorQueue unit
+                )
+        -- $ Queue.whileMountedOne
+        --     openLoginSignal
+        --     (\this _ -> unsafeCoerceEff $ dispatcher this Open)
             reactSpec
   in  R.createElement (R.createClass reactSpecLogin) unit []
   where
@@ -322,6 +337,7 @@ loginDialog
     submitDisabledSignal = unsafePerformEff $ IxSignal.make false
     emailQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
     pendingSignal = unsafePerformEff (IxSignal.make false)
     submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     _ = unsafePerformEff $ do

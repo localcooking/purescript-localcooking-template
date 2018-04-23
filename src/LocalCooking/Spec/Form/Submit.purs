@@ -1,9 +1,7 @@
 module LocalCooking.Spec.Form.Submit where
 
 import Prelude
-import Data.UUID (genUUID, GENUUID)
-import Data.Maybe (Maybe (..))
-import Text.Email.Validate (EmailAddress, emailAddress)
+import Data.UUID (GENUUID)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Class (liftEff)
@@ -19,7 +17,6 @@ import MaterialUI.Types (Styles)
 import MaterialUI.Button (button)
 import MaterialUI.Button as Button
 
-import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 import Queue (READ)

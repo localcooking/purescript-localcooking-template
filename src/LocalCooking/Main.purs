@@ -390,9 +390,11 @@ defaultMain
           , authTokenSignal
           , userEmailSignal
           , privacyPolicySignal
-          , authTokenQueues
-          , registerQueues
-          , userEmailQueues
+          , dependencies:
+            { authTokenQueues
+            , registerQueues
+            , userEmailQueues
+            }
           , templateArgs: {content,topbar,leftDrawer,palette,userDetails}
           , env
           , extendedNetwork

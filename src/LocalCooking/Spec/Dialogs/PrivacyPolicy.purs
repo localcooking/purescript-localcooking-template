@@ -1,41 +1,26 @@
 module LocalCooking.Spec.Dialogs.PrivacyPolicy where
 
-import LocalCooking.Spec.Content.Register.Pending (pending)
-import LocalCooking.Spec.Form.Email (email)
-import LocalCooking.Spec.Form.Password (password)
-import LocalCooking.Spec.Form.Submit (submit)
-import LocalCooking.Types.Env (Env)
 import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Links (PolicyLinks (..))
-import LocalCooking.Links.Class (registerLink, toLocation, class LocalCookingSiteLinks, class ToLocation)
+import LocalCooking.Links.Class (toLocation, class LocalCookingSiteLinks, class ToLocation)
 
 import Prelude
-import Data.Maybe (Maybe (..))
-import Data.Either (Either (..))
 import Data.URI (URI)
 import Data.URI.URI (print) as URI
 import Data.URI.Location (Location)
-import Data.UUID (genUUID, GENUUID)
-import Data.Time.Duration (Milliseconds (..))
-import Text.Email.Validate (EmailAddress)
-import Control.Monad.Base (liftBase)
-import Control.Monad.Eff (Eff)
-import Control.Monad.Aff (Aff, delay)
+import Data.UUID (GENUUID)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafeCoerceEff, unsafePerformEff)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Class (liftEff)
-import Control.Monad.Eff.Console (CONSOLE, log)
+import Control.Monad.Eff.Console (CONSOLE)
 
 import Thermite as T
 import React as R
 import React.DOM as R
 import React.DOM.Props as RP
-import React.DOM.Props.PreventDefault (preventDefault)
-import React.Queue.WhileMounted as Queue
 import React.Signal.WhileMounted as Signal
-import React.Icons (facebookIcon, twitterIcon, googleIcon)
 import DOM (DOM)
 import DOM.HTML.Types (HISTORY)
 
@@ -48,9 +33,6 @@ import MaterialUI.Button (button)
 import MaterialUI.Button as Button
 import Crypto.Scrypt (SCRYPT)
 
-import Queue.One (READ, Queue)
-import IxQueue (IxQueue)
-import IxQueue as IxQueue
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 
