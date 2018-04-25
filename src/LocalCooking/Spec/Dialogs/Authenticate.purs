@@ -4,10 +4,15 @@ import LocalCooking.Spec.Form.Pending (pending)
 import LocalCooking.Spec.Form.Email as Email
 import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Form.Submit as Submit
+import LocalCooking.Spec.Snackbar (SnackbarMessage (..))
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Links.Class (registerLink, toLocation, class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Common.Password (HashedPassword, hashPassword)
+import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues, PasswordVerifyInitIn (PasswordVerifyInitInAuth), PasswordVerifyInitOut (PasswordVerifyInitOutSuccess))
+import LocalCooking.Client.Dependencies.AuthToken (AuthTokenFailure (BadPassword))
+import LocalCooking.Auth.Error (AuthError (AuthExistsFailure))
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -98,6 +103,8 @@ spec :: forall eff siteLinks userDetailsLinks
      => { toURI :: Location -> URI
         , env :: Env
         , authenticateDialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) HashedPassword
+        , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
+        , errorMessageQueue    :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
         , password ::
           { signal       :: IxSignal (Effects eff) String
           , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
@@ -108,6 +115,7 @@ spec :: forall eff siteLinks userDetailsLinks
           , queue          :: IxQueue (read :: READ) (Effects eff) Unit
           }
         , pendingSignal :: IxSignal (Effects eff) Boolean
+        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
         }
      -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
 spec
@@ -116,7 +124,10 @@ spec
   , password
   , submit
   , pendingSignal
+  , authTokenSignal
   , authenticateDialogOutputQueue
+  , passwordVerifyQueues
+  , errorMessageQueue
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
@@ -130,12 +141,27 @@ spec
       ChangedWindowSize w -> void $ T.cotransform _ { windowSize = w }
       ChangedPage p -> void $ T.cotransform _ { currentPage = p }
       SubmitAuthenticate -> do
-        liftEff $ IxSignal.set true pendingSignal
-        password <- liftEff (IxSignal.get password.signal)
-        liftBase $ do
-          hashedPassword <- hashPassword {salt: env.salt, password}
-          liftEff $ One.putQueue authenticateDialogOutputQueue hashedPassword
-
+        mAuthToken <- liftEff (IxSignal.get authTokenSignal)
+        case mAuthToken of
+          Nothing -> pure unit
+          Just authToken -> do
+            liftEff $ IxSignal.set true pendingSignal
+            pw <- liftEff (IxSignal.get password.signal)
+            hashedPassword <- liftBase $
+              hashPassword {salt: env.salt, password: pw}
+            mVerify <- liftBase $
+              OneIO.callAsync passwordVerifyQueues (PasswordVerifyInitInAuth {authToken,password: hashedPassword})
+            case mVerify of
+              Just PasswordVerifyInitOutSuccess -> do
+                performAction Close props state
+                liftEff $ One.putQueue authenticateDialogOutputQueue hashedPassword
+              _ -> do
+                liftEff $ case mVerify of
+                  Nothing ->
+                    One.putQueue errorMessageQueue (SnackbarMessageAuthError AuthExistsFailure)
+                  _ ->
+                    One.putQueue errorMessageQueue (SnackbarMessageAuthFailure BadPassword)
+                liftEff $ One.putQueue password.errorQueue unit
     render :: T.Render (State siteLinks) Unit (Action siteLinks)
     render dispatch props state children =
       [ let dialog' =
@@ -193,18 +219,22 @@ authenticateDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
             => { authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit HashedPassword
-               , returnAuthenticateQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe Unit)
-               , windowSizeSignal  :: IxSignal (Effects eff) WindowSize
-               , currentPageSignal :: IxSignal (Effects eff) siteLinks
-               , toURI             :: Location -> URI
-               , env               :: Env
+               , passwordVerifyQueues    :: PasswordVerifySparrowClientQueues (Effects eff)
+               , errorMessageQueue       :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+               , windowSizeSignal        :: IxSignal (Effects eff) WindowSize
+               , currentPageSignal       :: IxSignal (Effects eff) siteLinks
+               , authTokenSignal         :: IxSignal (Effects eff) (Maybe AuthToken)
+               , toURI                   :: Location -> URI
+               , env                     :: Env
                }
             -> R.ReactElement
 authenticateDialog
   { authenticateDialogQueue: OneIO.IOQueues {input: authenticateDiaauthenticateputQueue, output: authenticateDialogOutputQueue}
-  , returnAuthenticateQueue
+  , passwordVerifyQueues
+  , errorMessageQueue
   , windowSizeSignal
   , currentPageSignal
+  , authTokenSignal
   , toURI
   , env
   } =
@@ -217,6 +247,8 @@ authenticateDialog
           ( spec
             { toURI
             , env
+            , passwordVerifyQueues
+            , errorMessageQueue
             , password:
               { signal: passwordSignal
               , updatedQueue: passwordQueue
@@ -227,6 +259,7 @@ authenticateDialog
               , disabledSignal: submitDisabledSignal
               }
             , pendingSignal
+            , authTokenSignal
             , authenticateDialogOutputQueue
             } )
           (initialState init)
@@ -243,12 +276,6 @@ authenticateDialog
         $ Queue.whileMountedIxUUID
             submitQueue
             (\this _ -> unsafeCoerceEff $ dispatcher this SubmitAuthenticate)
-        $ Queue.whileMountedOne
-            (One.allowReading returnAuthenticateQueue)
-            (\this mErr -> case mErr of
-                Nothing -> unsafeCoerceEff $ dispatcher this Close
-                Just _ -> One.putQueue passwordErrorQueue unit
-                )
             reactSpec
   in  R.createElement (R.createClass reactSpecAuthenticate) unit []
   where
