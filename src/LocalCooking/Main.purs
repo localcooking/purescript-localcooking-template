@@ -10,6 +10,8 @@ import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, register
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitOut (..), UserEmailInitIn (..))
+import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
+import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
 import LocalCooking.Common.AuthToken (AuthToken)
 
 import Sparrow.Client (allocateDependencies, unpackClient)
@@ -349,10 +351,16 @@ defaultMain
     ) <- newSparrowStaticClientQueues
   ( userEmailQueues :: UserEmailSparrowClientQueues (Effects eff)
     ) <- newSparrowStaticClientQueues
+  ( securityQueues :: SecuritySparrowClientQueues (Effects eff)
+    ) <- newSparrowStaticClientQueues
+  ( passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
+    ) <- newSparrowStaticClientQueues
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
-    unpackClient (Topic ["authToken"]) (sparrowClientQueues authTokenQueues)
-    unpackClient (Topic ["register"]) (sparrowStaticClientQueues registerQueues)
-    unpackClient (Topic ["userEmail"]) (sparrowStaticClientQueues userEmailQueues)
+    unpackClient (Topic ["template", "authToken"]) (sparrowClientQueues authTokenQueues)
+    unpackClient (Topic ["template", "register"]) (sparrowStaticClientQueues registerQueues)
+    unpackClient (Topic ["template", "userEmail"]) (sparrowStaticClientQueues userEmailQueues)
+    unpackClient (Topic ["template", "security"]) (sparrowStaticClientQueues securityQueues)
+    unpackClient (Topic ["template", "passwordVerify"]) (sparrowStaticClientQueues passwordVerifyQueues)
     deps
 
   -- user details fetcher and oblitorator
@@ -394,6 +402,8 @@ defaultMain
             { authTokenQueues
             , registerQueues
             , userEmailQueues
+            , securityQueues
+            , passwordVerifyQueues
             }
           , templateArgs: {content,topbar,leftDrawer,palette,userDetails}
           , env

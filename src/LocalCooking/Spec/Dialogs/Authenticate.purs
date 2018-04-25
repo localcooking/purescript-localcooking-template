@@ -1,19 +1,12 @@
-module LocalCooking.Spec.Dialogs.Login where
+module LocalCooking.Spec.Dialogs.Authenticate where
 
 import LocalCooking.Spec.Form.Pending (pending)
 import LocalCooking.Spec.Form.Email as Email
 import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Form.Submit as Submit
-import LocalCooking.Spec.Snackbar (SnackbarMessage (..))
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Auth.Error (AuthError (AuthExistsFailure))
 import LocalCooking.Window (WindowSize (..))
-import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues, PasswordVerifyInitIn (PasswordVerifyInitInUnauth), PasswordVerifyInitOut (PasswordVerifyInitOutSuccess))
-import LocalCooking.Client.Dependencies.AuthToken (AuthTokenFailure (BadPassword))
-import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
 import LocalCooking.Links.Class (registerLink, toLocation, class LocalCookingSiteLinks, class ToLocation)
-import Facebook.Call (FacebookLoginLink (..), facebookLoginLinkToURI)
-import Facebook.State (FacebookLoginState (..))
 import LocalCooking.Common.Password (HashedPassword, hashPassword)
 
 import Prelude
@@ -86,8 +79,7 @@ data Action siteLinks
   | Close
   | ChangedWindowSize WindowSize
   | ChangedPage siteLinks
-  | SubmitLogin
-  | ClickedRegister
+  | SubmitAuthenticate
 
 type Effects eff =
   ( ref       :: REF
@@ -105,14 +97,7 @@ spec :: forall eff siteLinks userDetailsLinks
      => ToLocation siteLinks
      => { toURI :: Location -> URI
         , env :: Env
-        , toRegister :: Eff (Effects eff) Unit
-        , loginDialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) {email :: EmailAddress, password :: HashedPassword}
-        , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
-        , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-        , email ::
-          { signal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
-          , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
-          }
+        , authenticateDialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) HashedPassword
         , password ::
           { signal       :: IxSignal (Effects eff) String
           , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
@@ -128,14 +113,10 @@ spec :: forall eff siteLinks userDetailsLinks
 spec
   { toURI
   , env
-  , toRegister
-  , email
   , password
   , submit
   , pendingSignal
-  , loginDialogOutputQueue
-  , passwordVerifyQueues
-  , errorMessageQueue
+  , authenticateDialogOutputQueue
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
@@ -145,36 +126,15 @@ spec
         void $ T.cotransform _ { open = false }
         liftBase $ delay $ Milliseconds 2000.0
         liftEff $ do
-          IxSignal.set (Left "") email.signal
           IxSignal.set "" password.signal
       ChangedWindowSize w -> void $ T.cotransform _ { windowSize = w }
       ChangedPage p -> void $ T.cotransform _ { currentPage = p }
-      ClickedRegister -> do
-        liftEff toRegister
-        performAction Close props state
-      SubmitLogin -> do
-        mEmail <- liftEff $ do
-          IxSignal.set true pendingSignal
-          IxSignal.get email.signal
-        case mEmail of
-          Right (Just email) -> do
-            pw <- liftEff (IxSignal.get password.signal)
-            hashedPassword <- liftBase $
-              hashPassword {salt: env.salt, password: pw}
-            mVerify <- liftBase $
-              OneIO.callAsync passwordVerifyQueues (PasswordVerifyInitInUnauth {email,password: hashedPassword})
-            case mVerify of
-              Just PasswordVerifyInitOutSuccess -> do
-                performAction Close props state
-                liftEff $ One.putQueue loginDialogOutputQueue {email,password: hashedPassword}
-              _ -> do
-                liftEff $ case mVerify of
-                  Nothing ->
-                    One.putQueue errorMessageQueue (SnackbarMessageAuthError AuthExistsFailure)
-                  _ ->
-                    One.putQueue errorMessageQueue (SnackbarMessageAuthFailure BadPassword)
-                liftEff $ One.putQueue password.errorQueue unit
-          _ -> liftEff $ log "bad email!" -- FIXME bug out somehow?
+      SubmitAuthenticate -> do
+        liftEff $ IxSignal.set true pendingSignal
+        password <- liftEff (IxSignal.get password.signal)
+        liftBase $ do
+          hashedPassword <- hashPassword {salt: env.salt, password}
+          liftEff $ One.putQueue authenticateDialogOutputQueue hashedPassword
 
     render :: T.Render (State siteLinks) Unit (Action siteLinks)
     render dispatch props state children =
@@ -194,74 +154,24 @@ spec
                       when (not pending) (dispatch Close)
                   }
         in  dialog'
-            [ dialogTitle {} [R.text "Login"]
+            [ dialogTitle {} [R.text "Authenticate"]
             , dialogContent {style: createStyles {position: "relative"}}
-              [ Email.email
-                { label: R.text "Email"
-                , fullWidth: true
-                , name: "login-email"
-                , id: "login-email"
-                , emailSignal: email.signal
-                , parentSignal: Nothing
-                , updatedQueue: email.updatedQueue
-                }
-              , Password.password
+              [ Password.password
                 { label: R.text "Password"
                 , fullWidth: true
-                , name: "login-password"
-                , id: "login-password"
+                , name: "authenticate-password"
+                , id: "authenticate-password"
                 , passwordSignal: password.signal
                 , parentSignal: Nothing
                 , updatedQueue: password.updatedQueue
                 , errorQueue: password.errorQueue
                 }
-              , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em"}] $
-                  let mkFab mainColor darkColor icon mLink =
-                        Button.withStyles
-                          (\theme ->
-                            { root: createStyles
-                              { backgroundColor: mainColor
-                              , color: "#ffffff"
-                              , "&:hover": {backgroundColor: darkColor}
-                              }
-                            }
-                          )
-                          (\{classes} ->
-                            button
-                              { variant: Button.fab
-                              , classes: Button.createClasses {root: classes.root}
-                              , disabled: case mLink of
-                                Nothing -> true
-                                _ -> false
-                              , href: case mLink of
-                                Nothing -> ""
-                                Just link -> URI.print $ facebookLoginLinkToURI env link
-                              } [icon]
-                          )
-                  in  [ mkFab "#3b5998" "#1e3f82" facebookIcon $
-                         Just $ FacebookLoginLink
-                         { redirectURL: toURI (toLocation FacebookLoginReturn)
-                         , state: FacebookLoginState
-                           { origin: state.currentPage
-                           }
-                         }
-                      , mkFab "#1da1f3" "#0f8cdb" twitterIcon Nothing
-                      , mkFab "#dd4e40" "#c13627" googleIcon Nothing
-                      ]
               , pending
                 { pendingSignal
                 }
               ]
             , dialogActions {}
-              [ button
-                { color: Button.secondary
-                , onClick: mkEffFn1 preventDefault
-                , onTouchTap: mkEffFn1 \e -> do
-                    preventDefault e
-                    dispatch ClickedRegister
-                , href: URI.print $ toURI $ toLocation $ registerLink :: siteLinks
-                } [R.text "Register"]
-              , Submit.submit
+              [ Submit.submit
                 { color: Button.primary
                 , variant: Button.flat
                 , size: Button.medium
@@ -279,28 +189,24 @@ spec
 
 
 
-loginDialog :: forall eff siteLinks userDetailsLinks
+authenticateDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
-            => { loginDialogQueue     :: OneIO.IOQueues (Effects eff) Unit {email :: EmailAddress, password :: HashedPassword}
-               , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
-               , errorMessageQueue    :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-               , windowSizeSignal     :: IxSignal (Effects eff) WindowSize
-               , currentPageSignal    :: IxSignal (Effects eff) siteLinks
-               , toURI                :: Location -> URI
-               , env                  :: Env
-               , toRegister           :: Eff (Effects eff) Unit
+            => { authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit HashedPassword
+               , returnAuthenticateQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe Unit)
+               , windowSizeSignal  :: IxSignal (Effects eff) WindowSize
+               , currentPageSignal :: IxSignal (Effects eff) siteLinks
+               , toURI             :: Location -> URI
+               , env               :: Env
                }
             -> R.ReactElement
-loginDialog
-  { loginDialogQueue: OneIO.IOQueues {input: loginDialogInputQueue, output: loginDialogOutputQueue}
-  , passwordVerifyQueues
-  , errorMessageQueue
+authenticateDialog
+  { authenticateDialogQueue: OneIO.IOQueues {input: authenticateDiaauthenticateputQueue, output: authenticateDialogOutputQueue}
+  , returnAuthenticateQueue
   , windowSizeSignal
   , currentPageSignal
   , toURI
   , env
-  , toRegister
   } =
   let init =
         { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
@@ -311,13 +217,6 @@ loginDialog
           ( spec
             { toURI
             , env
-            , toRegister
-            , passwordVerifyQueues
-            , errorMessageQueue
-            , email:
-              { signal: emailSignal
-              , updatedQueue: emailQueue
-              }
             , password:
               { signal: passwordSignal
               , updatedQueue: passwordQueue
@@ -328,10 +227,10 @@ loginDialog
               , disabledSignal: submitDisabledSignal
               }
             , pendingSignal
-            , loginDialogOutputQueue
+            , authenticateDialogOutputQueue
             } )
           (initialState init)
-      reactSpecLogin =
+      reactSpecAuthenticate =
           Signal.whileMountedIxUUID
             windowSizeSignal
             (\this x -> unsafeCoerceEff $ dispatcher this (ChangedWindowSize x))
@@ -339,13 +238,19 @@ loginDialog
             currentPageSignal
             (\this x -> unsafeCoerceEff $ dispatcher this (ChangedPage x))
         $ Queue.whileMountedOne
-            loginDialogInputQueue
+            authenticateDiaauthenticateputQueue
             (\this _ -> unsafeCoerceEff $ dispatcher this Open)
         $ Queue.whileMountedIxUUID
             submitQueue
-            (\this _ -> unsafeCoerceEff $ dispatcher this SubmitLogin)
+            (\this _ -> unsafeCoerceEff $ dispatcher this SubmitAuthenticate)
+        $ Queue.whileMountedOne
+            (One.allowReading returnAuthenticateQueue)
+            (\this mErr -> case mErr of
+                Nothing -> unsafeCoerceEff $ dispatcher this Close
+                Just _ -> One.putQueue passwordErrorQueue unit
+                )
             reactSpec
-  in  R.createElement (R.createClass reactSpecLogin) unit []
+  in  R.createElement (R.createClass reactSpecAuthenticate) unit []
   where
     emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
     passwordSignal = unsafePerformEff $ IxSignal.make ""

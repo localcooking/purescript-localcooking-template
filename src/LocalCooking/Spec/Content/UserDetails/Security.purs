@@ -6,6 +6,7 @@ import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Spec.Snackbar (SnackbarMessage)
 import LocalCooking.Types.Env (Env)
+import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -13,13 +14,15 @@ import Data.Either (Either (..))
 import Data.UUID (genUUID, GENUUID)
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Eff.Ref (REF)
-import Control.Monad.Eff.Unsafe (unsafePerformEff)
+import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
+import Control.Monad.Eff.Class (liftEff)
 
 import Thermite as T
 import React as R
 import React.DOM as R
 import React.DOM.Props as RP
+import React.Queue.WhileMounted as Queue
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Typography (typography)
@@ -42,7 +45,8 @@ type State = Unit
 initialState :: State
 initialState = unit
 
-type Action = Unit
+data Action
+  = SubmitSecurity
 
 
 type Effects eff =
@@ -55,6 +59,7 @@ type Effects eff =
 spec :: forall eff
       . { errorMessageQueue        :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
         , env                      :: Env
+        , securityQueues           :: SecuritySparrowClientQueues (Effects eff)
         , email ::
           { signal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
           , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
@@ -80,6 +85,7 @@ spec :: forall eff
 spec
   { errorMessageQueue
   , env
+  , securityQueues
   , email
   , emailConfirm
   , password
@@ -88,7 +94,35 @@ spec
   , pendingSignal
   } = T.simpleSpec performAction render
   where
-    performAction action props state = pure unit
+    performAction action props state = case action of
+      SubmitSecurity -> do
+        liftEff $ IxSignal.set true pendingSignal
+        mEmail <- liftEff $ IxSignal.get email.signal
+        case mEmail of
+          Right (Just email) -> do
+            passwordString <- liftEff (IxSignal.get password.signal)
+            pure unit
+            -- mErr <- liftBase $ do
+            --   password <- liftBase $ hashPassword
+            --     { password: passwordString
+            --     , salt: env.salt
+            --     }
+            --   -- OneIO.callAsync registerQueues $ RegisterInitIn {email,password,reCaptcha}
+            -- liftEff $ do
+            --   case mErr of
+            --     Nothing -> pure unit
+            --     Just initOut -> One.putQueue errorMessageQueue $ case initOut of
+            --       RegisterInitOutEmailSent ->
+            --         SnackbarMessageRegister Nothing
+            --       RegisterInitOutBadCaptcha ->
+            --         SnackbarMessageRegister $
+            --           Just RegisterErrorBadCaptchaResponse
+            --       RegisterInitOutDBError e ->
+            --         SnackbarMessageRegister $
+            --           Just RegisterErrorEmailInUse
+            --   IxSignal.set false pendingSignal
+          _ -> pure unit
+        
 
     render :: T.Render State Unit Action
     render dispatch props state children =
@@ -155,15 +189,17 @@ spec
 
 security :: forall eff
           . { errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+            , securityQueues    :: SecuritySparrowClientQueues (Effects eff)
             , env               :: Env
             }
          -> R.ReactElement
-security {errorMessageQueue,env} =
+security {errorMessageQueue,env,securityQueues} =
   let {spec: reactSpec, dispatcher} =
         T.createReactSpec
           ( spec
             { env
             , errorMessageQueue
+            , securityQueues
             , email:
               { signal: emailSignal
               , updatedQueue: emailUpdatedQueue
@@ -187,7 +223,12 @@ security {errorMessageQueue,env} =
             , pendingSignal
             } )
           initialState
-  in  R.createElement (R.createClass reactSpec) unit []
+      reactSpec' =
+          Queue.whileMountedIxUUID
+            submitQueue
+            (\this _ -> unsafeCoerceEff $ dispatcher this SubmitSecurity)
+            reactSpec
+  in  R.createElement (R.createClass reactSpec') unit []
   where
     emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
     emailConfirmSignal = unsafePerformEff $ IxSignal.make $ Left ""

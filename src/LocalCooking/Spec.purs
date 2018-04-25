@@ -21,6 +21,8 @@ import LocalCooking.Client.Dependencies.AuthToken
   )
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
+import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
+import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
 
 import Sparrow.Client.Queue (callSparrowClientQueues)
 
@@ -126,13 +128,14 @@ spec :: forall eff siteLinks userDetailsLinks
         , authTokenSignal     :: IxSignal (Effects eff) (Maybe AuthToken)
         , userEmailSignal     :: IxSignal (Effects eff) (Maybe EmailAddress)
         , dependencies ::
-          { authTokenQueues     :: AuthTokenSparrowClientQueues (Effects eff)
-          , registerQueues      :: RegisterSparrowClientQueues (Effects eff)
-          , userEmailQueues     :: UserEmailSparrowClientQueues (Effects eff)
+          { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
+          , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
+          , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
+          , securityQueues       :: SecuritySparrowClientQueues (Effects eff)
+          , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
           }
         , login ::
           { loginDialogQueue  :: OneIO.IOQueues (Effects eff) Unit {email :: EmailAddress, password :: HashedPassword}
-          , returnLoginQueue  :: One.Queue (write :: WRITE) (Effects eff) (Maybe Unit)
           }
         , templateArgs ::
           { content :: { toURI :: Location -> URI
@@ -217,23 +220,20 @@ spec
       CallAuthToken initIn -> do
         let onDeltaOut deltaOut = case deltaOut of
               AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal -- TODO verify this is enough to trigger a complete remote logout
-              AuthTokenDeltaOutNew authToken' -> pure unit -- FIXME TODO
+              AuthTokenDeltaOutNew authToken' -> pure unit -- FIXME TODO actuate an updated authToken, atomically forall subscriptions
         mInitOut <- liftBase $ callSparrowClientQueues dependencies.authTokenQueues onDeltaOut initIn
         liftEff $ do
           case mInitOut of
             Nothing -> do
               IxSignal.set Nothing authTokenSignal
               One.putQueue errorMessageQueue (SnackbarMessageAuthError AuthExistsFailure)
-              One.putQueue login.returnLoginQueue (Just unit)
             Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
               AuthTokenInitOutSuccess authToken -> do
                 IxSignal.set (Just authToken) authTokenSignal
-                One.putQueue login.returnLoginQueue Nothing
               AuthTokenInitOutFailure e -> do
                 unsubscribe
                 IxSignal.set Nothing authTokenSignal
                 One.putQueue errorMessageQueue (SnackbarMessageAuthFailure e)
-                One.putQueue login.returnLoginQueue (Just unit)
 
 
     render :: T.Render (State siteLinks) Unit (Action siteLinks)
@@ -253,7 +253,8 @@ spec
       ] <> mainContent <>
       [ loginDialog
         { loginDialogQueue: login.loginDialogQueue
-        , returnLoginQueue: login.returnLoginQueue
+        , passwordVerifyQueues: dependencies.passwordVerifyQueues
+        , errorMessageQueue: One.writeOnly errorMessageQueue
         , toURI
         , windowSizeSignal
         , currentPageSignal
@@ -384,6 +385,7 @@ spec
                           [ security
                             { env
                             , errorMessageQueue: One.writeOnly errorMessageQueue
+                            , securityQueues: dependencies.securityQueues
                             }
                           ]
                         | otherwise -> def
@@ -468,6 +470,8 @@ app :: forall eff siteLinks userDetailsLinks
           { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
           , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
           , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
+          , securityQueues       :: SecuritySparrowClientQueues (Effects eff)
+          , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
           }
        , templateArgs ::
           { content :: { toURI :: Location -> URI
@@ -552,7 +556,6 @@ app
           , dependencies
           , login:
             { loginDialogQueue
-            , returnLoginQueue
             }
           , authTokenSignal
           , userEmailSignal
@@ -588,6 +591,3 @@ app
   where
     loginDialogQueue :: OneIO.IOQueues (Effects eff) Unit {email :: EmailAddress, password :: HashedPassword}
     loginDialogQueue = unsafePerformEff OneIO.newIOQueues
-
-    returnLoginQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe Unit)
-    returnLoginQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
