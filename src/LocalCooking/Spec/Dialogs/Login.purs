@@ -106,7 +106,7 @@ spec :: forall eff siteLinks userDetailsLinks
      => { toURI :: Location -> URI
         , env :: Env
         , toRegister :: Eff (Effects eff) Unit
-        , loginDialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) {email :: EmailAddress, password :: HashedPassword}
+        , loginDialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe {email :: EmailAddress, password :: HashedPassword})
         , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
         , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
         , email ::
@@ -166,7 +166,7 @@ spec
             case mVerify of
               Just PasswordVerifyInitOutSuccess -> do
                 performAction Close props state
-                liftEff $ One.putQueue loginDialogOutputQueue {email,password: hashedPassword}
+                liftEff $ One.putQueue loginDialogOutputQueue (Just {email,password: hashedPassword})
               _ -> do
                 liftEff $ case mVerify of
                   Nothing ->
@@ -258,6 +258,7 @@ spec
                 , onClick: mkEffFn1 preventDefault
                 , onTouchTap: mkEffFn1 \e -> do
                     preventDefault e
+                    unsafeCoerceEff (One.putQueue loginDialogOutputQueue Nothing)
                     dispatch ClickedRegister
                 , href: URI.print $ toURI $ toLocation $ registerLink :: siteLinks
                 } [R.text "Register"]
@@ -282,7 +283,7 @@ spec
 loginDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
-            => { loginDialogQueue     :: OneIO.IOQueues (Effects eff) Unit {email :: EmailAddress, password :: HashedPassword}
+            => { loginDialogQueue     :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
                , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
                , errorMessageQueue    :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
                , windowSizeSignal     :: IxSignal (Effects eff) WindowSize
@@ -343,7 +344,10 @@ loginDialog
             (\this _ -> unsafeCoerceEff $ dispatcher this Open)
         $ Queue.whileMountedIxUUID
             submitQueue
-            (\this _ -> unsafeCoerceEff $ dispatcher this SubmitLogin)
+            (\this _ -> do
+                One.putQueue loginDialogOutputQueue Nothing
+                unsafeCoerceEff $ dispatcher this SubmitLogin
+            )
             reactSpec
   in  R.createElement (R.createClass reactSpecLogin) unit []
   where

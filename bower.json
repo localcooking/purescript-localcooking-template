@@ -32,6 +32,7 @@
   "resolutions": {
     "purescript-sparrow": "c90698b4a1e204846e6f660d839bd25a6dd2e8ce",
     "purescript-uuid": "2e563284ee5c41d75bf9010de3c4cded9f0223db",
-    "purescript-arraybuffer-types": "^2.0.0"
+    "purescript-arraybuffer-types": "^2.0.0",
+    "purescript-zeta": "^0.0.4"
   }
 }

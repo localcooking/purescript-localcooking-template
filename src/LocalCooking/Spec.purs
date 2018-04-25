@@ -4,6 +4,7 @@ import LocalCooking.Spec.Topbar (topbar)
 import LocalCooking.Spec.Content.Register (register)
 import LocalCooking.Spec.Content.UserDetails.Security (security)
 import LocalCooking.Spec.Dialogs.Login (loginDialog)
+import LocalCooking.Spec.Dialogs.Authenticate (authenticateDialog)
 import LocalCooking.Spec.Dialogs.PrivacyPolicy (privacyPolicyDialog)
 import LocalCooking.Spec.Drawers.LeftMenu (leftMenu)
 import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..), RedirectError (RedirectLogout))
@@ -134,9 +135,8 @@ spec :: forall eff siteLinks userDetailsLinks
           , securityQueues       :: SecuritySparrowClientQueues (Effects eff)
           , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
           }
-        , login ::
-          { loginDialogQueue  :: OneIO.IOQueues (Effects eff) Unit {email :: EmailAddress, password :: HashedPassword}
-          }
+        , loginDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
+        , authenticateDialogQueue  :: OneIO.IOQueues (Effects eff) Unit HashedPassword
         , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -193,7 +193,8 @@ spec
   , development
   , errorMessageQueue
   , dependencies: dependencies@{authTokenQueues:{deltaIn: authTokenQueuesDeltaIn}}
-  , login
+  , loginDialogQueue
+  , authenticateDialogQueue
   , authTokenSignal
   , userEmailSignal
   , privacyPolicySignal
@@ -214,9 +215,12 @@ spec
       -- Mapping between programmatic authToken signal and UI shared state & error signaling
       GotAuthToken mToken -> void $ T.cotransform _ { authToken = mToken }
       AttemptLogin -> do
-        {email,password} <- liftBase $ OneIO.callAsync login.loginDialogQueue unit  
-        let initIn = AuthTokenInitInLogin {email,password}
-        performAction (CallAuthToken initIn) props state
+        mEmailPassword <- liftBase $ OneIO.callAsync loginDialogQueue unit
+        case mEmailPassword of
+          Nothing -> pure unit
+          Just {email,password} -> do
+            let initIn = AuthTokenInitInLogin {email,password}
+            performAction (CallAuthToken initIn) props state
       CallAuthToken initIn -> do
         let onDeltaOut deltaOut = case deltaOut of
               AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal -- TODO verify this is enough to trigger a complete remote logout
@@ -252,13 +256,23 @@ spec
         }
       ] <> mainContent <>
       [ loginDialog
-        { loginDialogQueue: login.loginDialogQueue
+        { loginDialogQueue
         , passwordVerifyQueues: dependencies.passwordVerifyQueues
         , errorMessageQueue: One.writeOnly errorMessageQueue
-        , toURI
         , windowSizeSignal
         , currentPageSignal
         , toRegister: siteLinks registerLink
+        , toURI
+        , env
+        }
+      , authenticateDialog
+        { authenticateDialogQueue
+        , passwordVerifyQueues: dependencies.passwordVerifyQueues
+        , errorMessageQueue: One.writeOnly errorMessageQueue
+        , authTokenSignal
+        , windowSizeSignal
+        , currentPageSignal
+        , toURI
         , env
         }
       , privacyPolicyDialog
@@ -554,9 +568,8 @@ app
           , development
           , errorMessageQueue
           , dependencies
-          , login:
-            { loginDialogQueue
-            }
+          , loginDialogQueue
+          , authenticateDialogQueue
           , authTokenSignal
           , userEmailSignal
           , templateArgs
@@ -589,5 +602,8 @@ app
 
   in  {spec: reactSpec', dispatcher}
   where
-    loginDialogQueue :: OneIO.IOQueues (Effects eff) Unit {email :: EmailAddress, password :: HashedPassword}
+    loginDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
     loginDialogQueue = unsafePerformEff OneIO.newIOQueues
+
+    authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit HashedPassword
+    authenticateDialogQueue = unsafePerformEff OneIO.newIOQueues
