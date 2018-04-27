@@ -38,7 +38,6 @@ import React.DOM.Props as RP
 import React.DOM.Props.PreventDefault (preventDefault)
 import React.Icons (facebookIcon, twitterIcon, googleIcon)
 import DOM (DOM)
-import DOM.HTML.Types (HISTORY)
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Button (button)
@@ -63,7 +62,6 @@ type Effects eff =
   , scrypt    :: SCRYPT
   , console   :: CONSOLE
   , dom       :: DOM
-  , history   :: HISTORY
   | eff)
 
 

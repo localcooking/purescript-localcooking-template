@@ -33,7 +33,6 @@ import Control.Monad.Eff.Unsafe (unsafeCoerceEff, unsafePerformEff)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Class (liftEff)
-import Control.Monad.Eff.Console (CONSOLE, log)
 
 import Thermite as T
 import React as R
@@ -44,7 +43,6 @@ import React.Queue.WhileMounted as Queue
 import React.Signal.WhileMounted as Signal
 import React.Icons (facebookIcon, twitterIcon, googleIcon)
 import DOM (DOM)
-import DOM.HTML.Types (HISTORY)
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Dialog (dialog)
@@ -53,7 +51,6 @@ import MaterialUI.DialogTitle (dialogTitle)
 import MaterialUI.DialogActions (dialogActions)
 import MaterialUI.Button (button)
 import MaterialUI.Button as Button
-import Crypto.Scrypt (SCRYPT)
 
 import Queue (READ, WRITE)
 import Queue.One as One
@@ -92,10 +89,7 @@ type Effects eff =
   ( ref       :: REF
   , uuid      :: GENUUID
   , exception :: EXCEPTION
-  , scrypt    :: SCRYPT
-  , console   :: CONSOLE
   , dom       :: DOM
-  , history   :: HISTORY
   | eff)
 
 
