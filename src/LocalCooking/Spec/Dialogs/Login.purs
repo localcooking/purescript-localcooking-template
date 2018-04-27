@@ -1,5 +1,6 @@
 module LocalCooking.Spec.Dialogs.Login where
 
+import LocalCooking.Spec.Dialogs.Generic (genericDialog)
 import LocalCooking.Spec.Form.Pending (pending)
 import LocalCooking.Spec.Form.Email as Email
 import LocalCooking.Spec.Form.Password as Password
@@ -64,7 +65,7 @@ import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 
 
-
+{-
 type State siteLinks =
   { open        :: Boolean
   , windowSize  :: WindowSize
@@ -88,16 +89,6 @@ data Action siteLinks
   | ChangedPage siteLinks
   | SubmitLogin
   | ClickedRegister
-
-type Effects eff =
-  ( ref       :: REF
-  , uuid      :: GENUUID
-  , exception :: EXCEPTION
-  , scrypt    :: SCRYPT
-  , console   :: CONSOLE
-  , dom       :: DOM
-  , history   :: HISTORY
-  | eff)
 
 
 spec :: forall eff siteLinks userDetailsLinks
@@ -191,7 +182,9 @@ spec
                   , fullWidth: true
                   , onClose: mkEffFn1 \_ -> do
                       pending <- unsafeCoerceEff $ IxSignal.get pendingSignal
-                      when (not pending) (dispatch Close)
+                      when (not pending) $ do
+                        unsafeCoerceEff $ One.putQueue loginDialogOutputQueue Nothing
+                        dispatch Close
                   }
         in  dialog'
             [ dialogTitle {} [R.text "Login"]
@@ -272,12 +265,25 @@ spec
                 } [R.text "Submit"]
               , button
                 { color: Button.default
-                , onTouchTap: mkEffFn1 \_ -> dispatch Close
+                , onTouchTap: mkEffFn1 \_ -> do
+                    unsafeCoerceEff (One.putQueue loginDialogOutputQueue Nothing)
+                    dispatch Close
                 } [R.text "Cancel"]
               ]
             ]
       ]
+-}
 
+
+type Effects eff =
+  ( ref       :: REF
+  , uuid      :: GENUUID
+  , exception :: EXCEPTION
+  , scrypt    :: SCRYPT
+  , console   :: CONSOLE
+  , dom       :: DOM
+  , history   :: HISTORY
+  | eff)
 
 
 loginDialog :: forall eff siteLinks userDetailsLinks
@@ -294,7 +300,7 @@ loginDialog :: forall eff siteLinks userDetailsLinks
                }
             -> R.ReactElement
 loginDialog
-  { loginDialogQueue: OneIO.IOQueues {input: loginDialogInputQueue, output: loginDialogOutputQueue}
+  { loginDialogQueue
   , passwordVerifyQueues
   , errorMessageQueue
   , windowSizeSignal
@@ -303,6 +309,126 @@ loginDialog
   , env
   , toRegister
   } =
+  genericDialog
+  { dialogQueue: loginDialogQueue
+  , errorMessageQueue
+  , windowSizeSignal
+  , currentPageSignal
+  , toURI
+  , env
+  , buttons: \{close} ->
+    [ button
+      { color: Button.secondary
+      , onClick: mkEffFn1 preventDefault
+      , onTouchTap: mkEffFn1 \e -> do
+          preventDefault e
+          unsafeCoerceEff $ do
+            close
+            toRegister
+      , href: URI.print $ toURI $ toLocation $ registerLink :: siteLinks
+      } [R.text "Register"]
+    ]
+  , title: "Login"
+  , submitValue: "Submit"
+  , pends: true
+  , content:
+    { component: \{submitDisabled} ->
+      let _ = unsafePerformEff $ do
+            k <- show <$> genUUID
+            let submitValue = do
+                  mEmail <- IxSignal.get emailSignal
+                  x <- case mEmail of
+                    Right (Just _) -> do
+                      p1 <- IxSignal.get passwordSignal
+                      pure (p1 == "")
+                    _ -> pure true
+                  submitDisabled x
+            IxQueue.onIxQueue emailQueue k \_ -> submitValue
+            IxQueue.onIxQueue passwordQueue k \_ -> submitValue
+            IxSignal.subscribe (\_ -> submitValue) emailSignal
+            IxSignal.subscribe (\_ -> submitValue) passwordSignal
+      in  [ Email.email
+            { label: R.text "Email"
+            , fullWidth: true
+            , name: "login-email"
+            , id: "login-email"
+            , emailSignal: emailSignal
+            , parentSignal: Nothing
+            , updatedQueue: emailQueue
+            }
+          , Password.password
+            { label: R.text "Password"
+            , fullWidth: true
+            , name: "login-password"
+            , id: "login-password"
+            , passwordSignal: passwordSignal
+            , parentSignal: Nothing
+            , updatedQueue: passwordQueue
+            , errorQueue: passwordErrorQueue
+            }
+          , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em"}] $
+              let mkFab mainColor darkColor icon mLink =
+                    Button.withStyles
+                      (\theme ->
+                        { root: createStyles
+                          { backgroundColor: mainColor
+                          , color: "#ffffff"
+                          , "&:hover": {backgroundColor: darkColor}
+                          }
+                        }
+                      )
+                      (\{classes} ->
+                        button
+                          { variant: Button.fab
+                          , classes: Button.createClasses {root: classes.root}
+                          , disabled: case mLink of
+                            Nothing -> true
+                            _ -> false
+                          , href: case mLink of
+                            Nothing -> ""
+                            Just link -> URI.print $ facebookLoginLinkToURI env link
+                          } [icon]
+                      )
+              in  [ mkFab "#3b5998" "#1e3f82" facebookIcon $
+                      Just $ FacebookLoginLink
+                      { redirectURL: toURI (toLocation FacebookLoginReturn)
+                      , state: FacebookLoginState
+                        { origin: unsafePerformEff (IxSignal.get currentPageSignal)
+                        }
+                      }
+                  , mkFab "#1da1f3" "#0f8cdb" twitterIcon Nothing
+                  , mkFab "#dd4e40" "#c13627" googleIcon Nothing
+                  ]
+          ]
+    , obtain: do
+      mEmail <- liftEff (IxSignal.get emailSignal)
+      case mEmail of
+        Right (Just email) -> do
+          pw <- liftEff (IxSignal.get passwordSignal)
+          hashedPassword <- liftBase (hashPassword {salt: env.salt, password: pw})
+          mVerify <- OneIO.callAsync
+            passwordVerifyQueues
+            (PasswordVerifyInitInUnauth {email,password: hashedPassword})
+          case mVerify of
+            Just PasswordVerifyInitOutSuccess -> do
+              pure (Just {email,password: hashedPassword})
+            _ -> do
+              liftEff $ case mVerify of
+                Nothing ->
+                  One.putQueue errorMessageQueue (SnackbarMessageAuthError AuthExistsFailure)
+                _ ->
+                  One.putQueue errorMessageQueue (SnackbarMessageAuthFailure BadPassword)
+              liftEff $ One.putQueue passwordErrorQueue unit
+              pure Nothing
+        _ -> do
+          liftEff $ log "bad email!" -- FIXME bug out somehow?
+          pure Nothing
+    , reset: do
+      IxSignal.set (Left "") emailSignal
+      IxSignal.set "" passwordSignal
+    }
+  }
+  {-
   let init =
         { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
         , initWindowSize: unsafePerformEff $ IxSignal.get windowSizeSignal
@@ -344,33 +470,14 @@ loginDialog
             (\this _ -> unsafeCoerceEff $ dispatcher this Open)
         $ Queue.whileMountedIxUUID
             submitQueue
-            (\this _ -> do
-                One.putQueue loginDialogOutputQueue Nothing
-                unsafeCoerceEff $ dispatcher this SubmitLogin
+            (\this _ -> unsafeCoerceEff $ dispatcher this SubmitLogin
             )
             reactSpec
   in  R.createElement (R.createClass reactSpecLogin) unit []
+-}
   where
     emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
     passwordSignal = unsafePerformEff $ IxSignal.make ""
-    submitDisabledSignal = unsafePerformEff $ IxSignal.make false
     emailQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
-    pendingSignal = unsafePerformEff (IxSignal.make false)
-    submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-
-    _ = unsafePerformEff $ do
-      k <- show <$> genUUID
-      let submitValue = do
-            mEmail <- IxSignal.get emailSignal
-            x <- case mEmail of
-              Right (Just _) -> do
-                p1 <- IxSignal.get passwordSignal
-                pure (p1 == "")
-              _ -> pure true
-            IxSignal.set x submitDisabledSignal
-      IxQueue.onIxQueue emailQueue k \_ -> submitValue
-      IxQueue.onIxQueue passwordQueue k \_ -> submitValue
-      IxSignal.subscribe (\_ -> submitValue) emailSignal
-      IxSignal.subscribe (\_ -> submitValue) passwordSignal

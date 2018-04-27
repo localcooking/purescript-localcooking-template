@@ -4,15 +4,18 @@ import LocalCooking.Spec.Form.Pending (pending)
 import LocalCooking.Spec.Form.Email as Email
 import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Form.Submit as Submit
-import LocalCooking.Spec.Snackbar (SnackbarMessage)
+import LocalCooking.Spec.Snackbar (SnackbarMessage (SnackbarMessageSecurity), SecurityMessage (..))
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
+import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.Password (HashedPassword, hashPassword)
+import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues, SecurityInitIn (..), SecurityInitOut (..))
 
 import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
 import Data.UUID (genUUID, GENUUID)
 import Text.Email.Validate (EmailAddress)
+import Control.Monad.Base (liftBase)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
@@ -29,11 +32,13 @@ import MaterialUI.Typography (typography)
 import MaterialUI.Typography as Typography
 import MaterialUI.Button as Button
 import MaterialUI.Divider (divider)
+import Crypto.Scrypt (SCRYPT)
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 import Queue (WRITE, READ)
 import Queue.One as One
+import Queue.One.Aff as OneIO
 import IxQueue (IxQueue)
 import IxQueue as IxQueue
 
@@ -53,13 +58,16 @@ type Effects eff =
   ( ref :: REF
   , uuid :: GENUUID
   , exception :: EXCEPTION
+  , scrypt :: SCRYPT
   | eff)
 
 
 spec :: forall eff
-      . { errorMessageQueue        :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-        , env                      :: Env
-        , securityQueues           :: SecuritySparrowClientQueues (Effects eff)
+      . { errorMessageQueue       :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+        , env                     :: Env
+        , securityQueues          :: SecuritySparrowClientQueues (Effects eff)
+        , authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
+        , authTokenSignal         :: IxSignal (Effects eff) (Maybe AuthToken)
         , email ::
           { signal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
           , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
@@ -86,6 +94,8 @@ spec
   { errorMessageQueue
   , env
   , securityQueues
+  , authTokenSignal
+  , authenticateDialogQueue
   , email
   , emailConfirm
   , password
@@ -97,30 +107,35 @@ spec
     performAction action props state = case action of
       SubmitSecurity -> do
         liftEff $ IxSignal.set true pendingSignal
-        mEmail <- liftEff $ IxSignal.get email.signal
-        case mEmail of
-          Right (Just email) -> do
-            passwordString <- liftEff (IxSignal.get password.signal)
-            pure unit
-            -- mErr <- liftBase $ do
-            --   password <- liftBase $ hashPassword
-            --     { password: passwordString
-            --     , salt: env.salt
-            --     }
-            --   -- OneIO.callAsync registerQueues $ RegisterInitIn {email,password,reCaptcha}
-            -- liftEff $ do
-            --   case mErr of
-            --     Nothing -> pure unit
-            --     Just initOut -> One.putQueue errorMessageQueue $ case initOut of
-            --       RegisterInitOutEmailSent ->
-            --         SnackbarMessageRegister Nothing
-            --       RegisterInitOutBadCaptcha ->
-            --         SnackbarMessageRegister $
-            --           Just RegisterErrorBadCaptchaResponse
-            --       RegisterInitOutDBError e ->
-            --         SnackbarMessageRegister $
-            --           Just RegisterErrorEmailInUse
-            --   IxSignal.set false pendingSignal
+        mAuthToken <- liftEff $ IxSignal.get authTokenSignal
+        case mAuthToken of
+          Just authToken -> do
+            mEmail <- liftEff $ IxSignal.get email.signal
+            case mEmail of
+              Right (Just email) -> do
+                mAuthPass <- liftBase $ OneIO.callAsync authenticateDialogQueue unit
+                case mAuthPass of
+                  Nothing -> pure unit
+                  Just oldPassword -> do
+                    mErr <- liftBase $ do
+                      passwordString <- liftEff (IxSignal.get password.signal)
+                      newPassword <- hashPassword
+                        { password: passwordString
+                        , salt: env.salt
+                        }
+                      OneIO.callAsync securityQueues $ SecurityInitIn {authToken,email,newPassword,oldPassword}
+                    liftEff $ do
+                      case mErr of
+                        Nothing -> pure unit
+                        Just initOut -> One.putQueue errorMessageQueue $ case initOut of
+                          SecurityInitOutSuccess ->
+                            SnackbarMessageSecurity SecuritySaveSuccess
+                          SecurityInitOutFailure ->
+                            SnackbarMessageSecurity SecuritySaveFailed
+                          SecurityInitOutNoAuth ->
+                            SnackbarMessageSecurity SecuritySaveFailed
+                      IxSignal.set false pendingSignal
+              _ -> pure unit
           _ -> pure unit
         
 
@@ -189,16 +204,26 @@ spec
 
 security :: forall eff
           . { errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+            , authTokenSignal   :: IxSignal (Effects eff) (Maybe AuthToken)
+            , authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
             , securityQueues    :: SecuritySparrowClientQueues (Effects eff)
             , env               :: Env
             }
          -> R.ReactElement
-security {errorMessageQueue,env,securityQueues} =
+security
+  { errorMessageQueue
+  , authenticateDialogQueue
+  , env
+  , securityQueues
+  , authTokenSignal
+  } =
   let {spec: reactSpec, dispatcher} =
         T.createReactSpec
           ( spec
             { env
             , errorMessageQueue
+            , authTokenSignal
+            , authenticateDialogQueue
             , securityQueues
             , email:
               { signal: emailSignal

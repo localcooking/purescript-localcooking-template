@@ -62,12 +62,24 @@ instance showRedirectError :: Show RedirectError where
   show = gShow
 
 
+data SecurityMessage
+  = SecuritySaveFailed
+  | SecuritySaveSuccess
+
+derive instance genericSecurityMessage :: Generic SecurityMessage
+
+instance showSecurityMessage :: Show SecurityMessage where
+  show = gShow
+
+
+
 data SnackbarMessage
   = SnackbarMessageAuthFailure AuthTokenFailure
   | SnackbarMessageAuthError AuthError
   | SnackbarMessageUserEmail UserEmailError
   | SnackbarMessageRegister (Maybe RegisterError)
   | SnackbarMessageRedirect RedirectError
+  | SnackbarMessageSecurity SecurityMessage
 
 derive instance genericSnackbarMessage :: Generic SnackbarMessage
 
@@ -146,6 +158,9 @@ spec = T.simpleSpec performAction render
                   RedirectRegisterAuth -> R.text "Redirected - can't register while logged in."
                   RedirectUserDetailsNoAuth -> R.text "Redirected - can't view user details while logged out."
                   RedirectLogout -> R.text "Redirected - you've logged out."
+                SnackbarMessageSecurity sec -> case sec of
+                  SecuritySaveFailed -> R.text "Error - Securty save failed."
+                  SecuritySaveSuccess -> R.text "Security details saved."
           ]
         , action:
           [ iconButton

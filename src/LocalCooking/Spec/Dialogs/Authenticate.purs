@@ -102,7 +102,7 @@ spec :: forall eff siteLinks userDetailsLinks
      => ToLocation siteLinks
      => { toURI :: Location -> URI
         , env :: Env
-        , authenticateDialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) HashedPassword
+        , authenticateDialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe HashedPassword)
         , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
         , errorMessageQueue    :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
         , password ::
@@ -154,7 +154,7 @@ spec
             case mVerify of
               Just PasswordVerifyInitOutSuccess -> do
                 performAction Close props state
-                liftEff $ One.putQueue authenticateDialogOutputQueue hashedPassword
+                liftEff $ One.putQueue authenticateDialogOutputQueue (Just hashedPassword)
               _ -> do
                 liftEff $ case mVerify of
                   Nothing ->
@@ -207,7 +207,9 @@ spec
                 } [R.text "Submit"]
               , button
                 { color: Button.default
-                , onTouchTap: mkEffFn1 \_ -> dispatch Close
+                , onTouchTap: mkEffFn1 \_ -> do
+                    unsafeCoerceEff $ One.putQueue authenticateDialogOutputQueue Nothing
+                    dispatch Close
                 } [R.text "Cancel"]
               ]
             ]
@@ -218,7 +220,7 @@ spec
 authenticateDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
-            => { authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit HashedPassword
+            => { authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
                , passwordVerifyQueues    :: PasswordVerifySparrowClientQueues (Effects eff)
                , errorMessageQueue       :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
                , windowSizeSignal        :: IxSignal (Effects eff) WindowSize
@@ -275,7 +277,8 @@ authenticateDialog
             (\this _ -> unsafeCoerceEff $ dispatcher this Open)
         $ Queue.whileMountedIxUUID
             submitQueue
-            (\this _ -> unsafeCoerceEff $ dispatcher this SubmitAuthenticate)
+            (\this _ -> unsafeCoerceEff $ dispatcher this SubmitAuthenticate
+            )
             reactSpec
   in  R.createElement (R.createClass reactSpecAuthenticate) unit []
   where

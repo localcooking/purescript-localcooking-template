@@ -136,7 +136,7 @@ spec :: forall eff siteLinks userDetailsLinks
           , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
           }
         , loginDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
-        , authenticateDialogQueue  :: OneIO.IOQueues (Effects eff) Unit HashedPassword
+        , authenticateDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
         , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -400,6 +400,8 @@ spec
                             { env
                             , errorMessageQueue: One.writeOnly errorMessageQueue
                             , securityQueues: dependencies.securityQueues
+                            , authenticateDialogQueue
+                            , authTokenSignal
                             }
                           ]
                         | otherwise -> def
@@ -605,5 +607,5 @@ app
     loginDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
     loginDialogQueue = unsafePerformEff OneIO.newIOQueues
 
-    authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit HashedPassword
+    authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
     authenticateDialogQueue = unsafePerformEff OneIO.newIOQueues
