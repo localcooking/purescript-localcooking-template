@@ -276,10 +276,12 @@ spec
         , env
         }
       , privacyPolicyDialog
-        { toURI
-        , privacyPolicySignal
+        { privacyPolicySignal
+        , errorMessageQueue: One.writeOnly errorMessageQueue
         , windowSizeSignal
         , currentPageSignal
+        , toURI
+        , env
         }
       , leftMenu
         { mobileDrawerOpenSignal: One.readOnly mobileMenuButtonSignal

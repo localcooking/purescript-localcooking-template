@@ -1,14 +1,18 @@
 module LocalCooking.Spec.Dialogs.PrivacyPolicy where
 
+import LocalCooking.Spec.Dialogs.Generic (genericDialog)
 import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Links (PolicyLinks (..))
 import LocalCooking.Links.Class (toLocation, class LocalCookingSiteLinks, class ToLocation)
+import LocalCooking.Spec.Snackbar (SnackbarMessage)
+import LocalCooking.Types.Env (Env)
 
 import Prelude
 import Data.URI (URI)
 import Data.URI.URI (print) as URI
 import Data.URI.Location (Location)
 import Data.UUID (GENUUID)
+import Data.Maybe (Maybe (..))
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafeCoerceEff, unsafePerformEff)
 import Control.Monad.Eff.Ref (REF)
@@ -33,11 +37,14 @@ import MaterialUI.Button (button)
 import MaterialUI.Button as Button
 import Crypto.Scrypt (SCRYPT)
 
+import Queue (WRITE)
+import Queue.One as One
+import Queue.One.Aff as OneIO
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 
 
-
+{-
 type State siteLinks =
   { open        :: Boolean
   , windowSize  :: WindowSize
@@ -60,16 +67,6 @@ data Action siteLinks
   | ChangedWindowSize WindowSize
   | ChangedPage siteLinks
   | SubmitPrivacyPolicy
-
-type Effects eff =
-  ( ref       :: REF
-  , uuid      :: GENUUID
-  , exception :: EXCEPTION
-  , scrypt    :: SCRYPT
-  , console   :: CONSOLE
-  , dom       :: DOM
-  , history   :: HISTORY
-  | eff)
 
 
 spec :: forall eff siteLinks userDetailsLinks
@@ -125,6 +122,18 @@ spec
               ]
             ]
       ]
+-}
+
+
+type Effects eff =
+  ( ref       :: REF
+  , uuid      :: GENUUID
+  , exception :: EXCEPTION
+  , scrypt    :: SCRYPT
+  , console   :: CONSOLE
+  , dom       :: DOM
+  , history   :: HISTORY
+  | eff)
 
 
 
@@ -132,17 +141,44 @@ privacyPolicyDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
             => { privacyPolicySignal :: IxSignal (Effects eff) Boolean
+               , errorMessageQueue   :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
                , windowSizeSignal    :: IxSignal (Effects eff) WindowSize
                , currentPageSignal   :: IxSignal (Effects eff) siteLinks
                , toURI               :: Location -> URI
+               , env                 :: Env
                }
             -> R.ReactElement
 privacyPolicyDialog
   { privacyPolicySignal
+  , errorMessageQueue
   , windowSizeSignal
   , currentPageSignal
   , toURI
+  , env
   } =
+  genericDialog
+  { dialogQueue: privacyPolicyQueue
+  , errorMessageQueue
+  , windowSizeSignal
+  , currentPageSignal
+  , toURI
+  , env
+  , buttons: \_ -> []
+  , title: "Privacy Policy"
+  , submitValue: "Acknowledge"
+  , pends: false
+  , content:
+    { component: \_ ->
+      [ R.iframe
+        [ RP.src $ URI.print $ toURI $ toLocation PrivacyPolicyLink
+        , RP.style {width: "100%", border: "1px solid black"}
+        ] []
+      ]
+    , obtain: pure (Just unit)
+    , reset: pure unit
+    }
+  }
+{-
   let init =
         { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
         , initWindowSize: unsafePerformEff $ IxSignal.get windowSizeSignal
@@ -166,3 +202,11 @@ privacyPolicyDialog
             (\this p -> unsafeCoerceEff $ dispatcher this (if p then Open else Close))
             reactSpec
   in  R.createElement (R.createClass reactSpecPrivacyPolicy) unit []
+-}
+  where
+    privacyPolicyQueue = unsafePerformEff $ do
+      x@(OneIO.IOQueues {input}) <- OneIO.newIOQueues
+      IxSignal.subscribe
+        (\n -> when n (One.putQueue (One.allowWriting input) unit))
+        privacyPolicySignal
+      pure x
