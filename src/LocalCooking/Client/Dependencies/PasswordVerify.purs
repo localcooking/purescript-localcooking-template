@@ -28,11 +28,11 @@ instance encodeJsonPasswordVerifyInitIn :: EncodeJson PasswordVerifyInitIn where
   encodeJson initIn = case initIn of
     PasswordVerifyInitInAuth {authToken,password}
       ->  "authToken" := authToken
-      ~> "Password" := password
+      ~> "password" := password
       ~> jsonEmptyObject
     PasswordVerifyInitInUnauth {email,password}
       ->  "email" := Email.toString email
-      ~> "Password" := password
+      ~> "password" := password
       ~> jsonEmptyObject
 
 data PasswordVerifyInitOut
