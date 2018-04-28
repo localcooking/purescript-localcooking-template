@@ -31,9 +31,11 @@ import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut (jsonParser, decodeJson, encodeJson)
 import Text.Email.Validate (EmailAddress)
+import Control.Monad.Aff (runAff_)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
 import Control.Monad.Eff.Console (CONSOLE, log)
+import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Timer (TIMER, setTimeout)
 import Control.Monad.Eff.Now (NOW)
 import Control.Monad.Eff.Exception (EXCEPTION)
@@ -189,18 +191,30 @@ defaultMain
   ( userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
     ) <- IxSignal.make Nothing
 
-  ( privacyPolicySignal :: IxSignal (Effects eff) Boolean
-    ) <- do
-    mX <- getItem localStorage (StorageKey "privacypolicy")
-    let x = case mX of
-          Nothing -> true
-          Just s -> case jsonParser s >>= decodeJson of
-            Left _ -> true
-            Right b -> b
-    IxSignal.make x
+  -- ( privacyPolicySignal :: IxSignal (Effects eff) Boolean
+  --   ) <- do
+  --   mX <- getItem localStorage (StorageKey "privacypolicy")
+  --   let x = case mX of
+  --         Nothing -> true
+  --         Just s -> case jsonParser s >>= decodeJson of
+  --           Left _ -> true
+  --           Right b -> b
+  --   IxSignal.make x
 
-  IxSignal.subscribe
-    (setItem localStorage (StorageKey "privacypolicy") <<< show <<< encodeJson) privacyPolicySignal
+  -- FIXME do this at registration
+  let privacyPolicyKey = StorageKey "privacypolicy"
+  privacyPolicyDialogQueue <- OneIO.newIOQueues
+  mX <- getItem localStorage privacyPolicyKey
+  let x = case mX of
+        Nothing -> true
+        Just s -> case jsonParser s >>= decodeJson of
+          Left _ -> true
+          Right b -> b
+  when x $ runAff_ (\_ -> pure unit) $ do
+    mX <- OneIO.callAsync privacyPolicyDialogQueue unit
+    case mX of
+      Nothing -> pure unit
+      Just _ -> liftEff (setItem localStorage privacyPolicyKey (show (encodeJson false)))
 
   -- for `back` compatibility while being driven by `siteLinksSignal`
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks
@@ -397,7 +411,7 @@ defaultMain
           , errorMessageQueue
           , authTokenSignal
           , userEmailSignal
-          , privacyPolicySignal
+          , privacyPolicyDialogQueue
           , dependencies:
             { authTokenQueues
             , registerQueues

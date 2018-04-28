@@ -42,16 +42,16 @@ type Effects eff =
 privacyPolicyDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
-            => { privacyPolicySignal :: IxSignal (Effects eff) Boolean
-               , errorMessageQueue   :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-               , windowSizeSignal    :: IxSignal (Effects eff) WindowSize
-               , currentPageSignal   :: IxSignal (Effects eff) siteLinks
-               , toURI               :: Location -> URI
-               , env                 :: Env
+            => { privacyPolicyDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
+               , errorMessageQueue  :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+               , windowSizeSignal   :: IxSignal (Effects eff) WindowSize
+               , currentPageSignal  :: IxSignal (Effects eff) siteLinks
+               , toURI              :: Location -> URI
+               , env                :: Env
                }
             -> R.ReactElement
 privacyPolicyDialog
-  { privacyPolicySignal
+  { privacyPolicyDialogQueue
   , errorMessageQueue
   , windowSizeSignal
   , currentPageSignal
@@ -59,7 +59,7 @@ privacyPolicyDialog
   , env
   } =
   genericDialog
-  { dialogQueue: privacyPolicyQueue
+  { dialogQueue: privacyPolicyDialogQueue
   , errorMessageQueue
   , windowSizeSignal
   , currentPageSignal
@@ -80,10 +80,3 @@ privacyPolicyDialog
     , reset: pure unit
     }
   }
-  where
-    privacyPolicyQueue = unsafePerformEff $ do
-      x@(OneIO.IOQueues {input}) <- OneIO.newIOQueues
-      IxSignal.subscribe
-        (\n -> when n (One.putQueue (One.allowWriting input) unit))
-        privacyPolicySignal
-      pure x

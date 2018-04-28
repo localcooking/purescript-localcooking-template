@@ -125,7 +125,6 @@ spec :: forall eff siteLinks userDetailsLinks
         , errorMessageQueue   :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
         , windowSizeSignal    :: IxSignal (Effects eff) WindowSize
         , currentPageSignal   :: IxSignal (Effects eff) siteLinks
-        , privacyPolicySignal :: IxSignal (Effects eff) Boolean
         , authTokenSignal     :: IxSignal (Effects eff) (Maybe AuthToken)
         , userEmailSignal     :: IxSignal (Effects eff) (Maybe EmailAddress)
         , dependencies ::
@@ -137,6 +136,7 @@ spec :: forall eff siteLinks userDetailsLinks
           }
         , loginDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
         , authenticateDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
+        , privacyPolicyDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
         , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -195,9 +195,9 @@ spec
   , dependencies: dependencies@{authTokenQueues:{deltaIn: authTokenQueuesDeltaIn}}
   , loginDialogQueue
   , authenticateDialogQueue
+  , privacyPolicyDialogQueue
   , authTokenSignal
   , userEmailSignal
-  , privacyPolicySignal
   , templateArgs: templateArgs@{palette,content,userDetails}
   , env
   , extendedNetwork
@@ -276,7 +276,7 @@ spec
         , env
         }
       , privacyPolicyDialog
-        { privacyPolicySignal
+        { privacyPolicyDialogQueue
         , errorMessageQueue: One.writeOnly errorMessageQueue
         , windowSizeSignal
         , currentPageSignal
@@ -482,7 +482,6 @@ app :: forall eff siteLinks userDetailsLinks
        , currentPageSignal    :: IxSignal (Effects eff) siteLinks
        , authTokenSignal      :: IxSignal (Effects eff) (Maybe AuthToken)
        , userEmailSignal      :: IxSignal (Effects eff) (Maybe EmailAddress)
-       , privacyPolicySignal  :: IxSignal (Effects eff) Boolean
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
        , dependencies ::
           { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
@@ -537,6 +536,7 @@ app :: forall eff siteLinks userDetailsLinks
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
           }
        , extendedNetwork :: Array R.ReactElement
+       , privacyPolicyDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
        }
     -> { spec :: R.ReactSpec Unit (State siteLinks) (Array R.ReactElement) (Effects eff)
        , dispatcher :: R.ReactThis Unit (State siteLinks) -> (Action siteLinks) -> T.EventHandler
@@ -551,11 +551,11 @@ app
   , errorMessageQueue
   , authTokenSignal
   , userEmailSignal
-  , privacyPolicySignal
   , dependencies
   , templateArgs
   , env
   , extendedNetwork
+  , privacyPolicyDialogQueue
   } =
   let init =
         { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
@@ -567,13 +567,13 @@ app
           { toURI
           , windowSizeSignal
           , currentPageSignal
-          , privacyPolicySignal
           , siteLinks
           , development
           , errorMessageQueue
           , dependencies
           , loginDialogQueue
           , authenticateDialogQueue
+          , privacyPolicyDialogQueue
           , authTokenSignal
           , userEmailSignal
           , templateArgs
@@ -611,3 +611,6 @@ app
 
     authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
     authenticateDialogQueue = unsafePerformEff OneIO.newIOQueues
+
+    -- privacyPolicyDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
+    -- privacyPolicyDialogQueue = unsafePerformEff OneIO.newIOQueues
