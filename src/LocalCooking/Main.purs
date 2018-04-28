@@ -192,19 +192,23 @@ defaultMain
     ) <- IxSignal.make Nothing
 
   -- FIXME do this at registration
-  let privacyPolicyKey = StorageKey "privacypolicy"
   privacyPolicyDialogQueue <- OneIO.newIOQueues
+  let privacyPolicyKey = StorageKey "privacypolicy"
   mX <- getItem localStorage privacyPolicyKey
   let x = case mX of
         Nothing -> true
         Just s -> case jsonParser s >>= decodeJson of
           Left _ -> true
           Right b -> b
-  when x $
+  when x $ do
     let go eX = case eX of
-          Right (Just _) -> setItem localStorage privacyPolicyKey (show (encodeJson false))
+          Right (Just _) -> do
+            log "setting privacy policy..."
+            setItem localStorage privacyPolicyKey (show (encodeJson false))
           _ -> log "Failure in calling privacy policy queue?"
-    in  runAff_ go (OneIO.callAsync privacyPolicyDialogQueue unit)
+    runAff_ go $ do
+      liftEff $ log "Calling..."
+      OneIO.callAsync privacyPolicyDialogQueue unit
 
   -- for `back` compatibility while being driven by `siteLinksSignal`
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks
