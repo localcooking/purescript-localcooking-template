@@ -191,16 +191,6 @@ defaultMain
   ( userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
     ) <- IxSignal.make Nothing
 
-  -- ( privacyPolicySignal :: IxSignal (Effects eff) Boolean
-  --   ) <- do
-  --   mX <- getItem localStorage (StorageKey "privacypolicy")
-  --   let x = case mX of
-  --         Nothing -> true
-  --         Just s -> case jsonParser s >>= decodeJson of
-  --           Left _ -> true
-  --           Right b -> b
-  --   IxSignal.make x
-
   -- FIXME do this at registration
   let privacyPolicyKey = StorageKey "privacypolicy"
   privacyPolicyDialogQueue <- OneIO.newIOQueues
@@ -210,11 +200,11 @@ defaultMain
         Just s -> case jsonParser s >>= decodeJson of
           Left _ -> true
           Right b -> b
-  when x $ runAff_ (\_ -> pure unit) $ do
-    mX <- OneIO.callAsync privacyPolicyDialogQueue unit
-    case mX of
-      Nothing -> pure unit
-      Just _ -> liftEff (setItem localStorage privacyPolicyKey (show (encodeJson false)))
+  when x $
+    let go eX = case eX of
+          Right (Just _) -> setItem localStorage privacyPolicyKey (show (encodeJson false))
+          _ -> log "Failure in calling privacy policy queue?"
+    in  runAff_ go (OneIO.callAsync privacyPolicyDialogQueue unit)
 
   -- for `back` compatibility while being driven by `siteLinksSignal`
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks

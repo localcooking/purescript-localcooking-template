@@ -43,11 +43,11 @@ privacyPolicyDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
             => { privacyPolicyDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
-               , errorMessageQueue  :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-               , windowSizeSignal   :: IxSignal (Effects eff) WindowSize
-               , currentPageSignal  :: IxSignal (Effects eff) siteLinks
-               , toURI              :: Location -> URI
-               , env                :: Env
+               , errorMessageQueue        :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+               , windowSizeSignal         :: IxSignal (Effects eff) WindowSize
+               , currentPageSignal        :: IxSignal (Effects eff) siteLinks
+               , toURI                    :: Location -> URI
+               , env                      :: Env
                }
             -> R.ReactElement
 privacyPolicyDialog

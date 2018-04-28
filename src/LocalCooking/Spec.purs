@@ -134,9 +134,11 @@ spec :: forall eff siteLinks userDetailsLinks
           , securityQueues       :: SecuritySparrowClientQueues (Effects eff)
           , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
           }
-        , loginDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
-        , authenticateDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
-        , privacyPolicyDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
+        , dialog ::
+          { loginQueue         :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
+          , authenticateQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
+          , privacyPolicyQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
+          }
         , templateArgs ::
           { content :: { toURI :: Location -> URI
                        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -193,9 +195,7 @@ spec
   , development
   , errorMessageQueue
   , dependencies: dependencies@{authTokenQueues:{deltaIn: authTokenQueuesDeltaIn}}
-  , loginDialogQueue
-  , authenticateDialogQueue
-  , privacyPolicyDialogQueue
+  , dialog
   , authTokenSignal
   , userEmailSignal
   , templateArgs: templateArgs@{palette,content,userDetails}
@@ -215,7 +215,7 @@ spec
       -- Mapping between programmatic authToken signal and UI shared state & error signaling
       GotAuthToken mToken -> void $ T.cotransform _ { authToken = mToken }
       AttemptLogin -> do
-        mEmailPassword <- liftBase $ OneIO.callAsync loginDialogQueue unit
+        mEmailPassword <- liftBase $ OneIO.callAsync dialog.loginQueue unit
         case mEmailPassword of
           Nothing -> pure unit
           Just {email,password} -> do
@@ -256,7 +256,7 @@ spec
         }
       ] <> mainContent <>
       [ loginDialog
-        { loginDialogQueue
+        { loginDialogQueue: dialog.loginQueue
         , passwordVerifyQueues: dependencies.passwordVerifyQueues
         , errorMessageQueue: One.writeOnly errorMessageQueue
         , windowSizeSignal
@@ -266,7 +266,7 @@ spec
         , env
         }
       , authenticateDialog
-        { authenticateDialogQueue
+        { authenticateDialogQueue: dialog.authenticateQueue
         , passwordVerifyQueues: dependencies.passwordVerifyQueues
         , errorMessageQueue: One.writeOnly errorMessageQueue
         , authTokenSignal
@@ -276,7 +276,7 @@ spec
         , env
         }
       , privacyPolicyDialog
-        { privacyPolicyDialogQueue
+        { privacyPolicyDialogQueue: dialog.privacyPolicyQueue
         , errorMessageQueue: One.writeOnly errorMessageQueue
         , windowSizeSignal
         , currentPageSignal
@@ -402,7 +402,7 @@ spec
                             { env
                             , errorMessageQueue: One.writeOnly errorMessageQueue
                             , securityQueues: dependencies.securityQueues
-                            , authenticateDialogQueue
+                            , authenticateDialogQueue: dialog.authenticateQueue
                             , authTokenSignal
                             }
                           ]
@@ -571,9 +571,11 @@ app
           , development
           , errorMessageQueue
           , dependencies
-          , loginDialogQueue
-          , authenticateDialogQueue
-          , privacyPolicyDialogQueue
+          , dialog:
+            { loginQueue: loginDialogQueue
+            , authenticateQueue: authenticateDialogQueue
+            , privacyPolicyQueue: privacyPolicyDialogQueue
+            }
           , authTokenSignal
           , userEmailSignal
           , templateArgs
@@ -611,6 +613,3 @@ app
 
     authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
     authenticateDialogQueue = unsafePerformEff OneIO.newIOQueues
-
-    -- privacyPolicyDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
-    -- privacyPolicyDialogQueue = unsafePerformEff OneIO.newIOQueues
