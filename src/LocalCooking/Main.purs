@@ -12,7 +12,7 @@ import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitOut (..), UserEmailInitIn (..))
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
-import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.AccessToken.Auth (AuthToken)
 
 import Sparrow.Client (allocateDependencies, unpackClient)
 import Sparrow.Client.Queue (newSparrowClientQueues, newSparrowStaticClientQueues, sparrowClientQueues, sparrowStaticClientQueues)

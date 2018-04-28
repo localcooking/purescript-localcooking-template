@@ -1,6 +1,6 @@
 module LocalCooking.Auth.Error where
 
-import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.AccessToken.Auth (AuthToken)
 
 import Prelude
 import Data.Either (Either (..))

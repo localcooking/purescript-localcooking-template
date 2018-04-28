@@ -2,7 +2,7 @@ module LocalCooking.Spec.Topbar where
 
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation, toLocation, rootLink, getUserDetailsLink, userDetailsLink)
 import LocalCooking.Window (WindowSize (..))
-import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.AccessToken.Auth (AuthToken)
 
 import Prelude
 import Data.URI (URI)

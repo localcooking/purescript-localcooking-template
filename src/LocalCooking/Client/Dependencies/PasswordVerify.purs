@@ -1,6 +1,6 @@
 module LocalCooking.Client.Dependencies.PasswordVerify where
 
-import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.Password (HashedPassword)
 
 import Prelude

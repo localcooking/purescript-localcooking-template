@@ -14,7 +14,7 @@ import LocalCooking.Window (WindowSize (Laptop))
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Links.Class (registerLink, rootLink, userDetailsLink, getUserDetailsLink, userDetailsGeneralLink, userDetailsSecurityLink, class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Auth.Error (AuthError (AuthExistsFailure), PreliminaryAuthToken (..))
-import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.Password (HashedPassword)
 import LocalCooking.Client.Dependencies.AuthToken
   ( AuthTokenSparrowClientQueues

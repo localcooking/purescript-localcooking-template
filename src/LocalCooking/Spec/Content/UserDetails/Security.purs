@@ -6,7 +6,7 @@ import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Spec.Snackbar (SnackbarMessage (SnackbarMessageSecurity), SecurityMessage (..))
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.Password (HashedPassword, hashPassword)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues, SecurityInitIn (..), SecurityInitOut (..))
 

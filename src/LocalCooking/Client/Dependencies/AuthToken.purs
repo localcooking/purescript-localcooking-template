@@ -1,7 +1,7 @@
 module LocalCooking.Client.Dependencies.AuthToken where
 
 import LocalCooking.Common.Password (HashedPassword)
-import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.AccessToken.Auth (AuthToken)
 
 import Sparrow.Client.Queue (SparrowClientQueues)
 

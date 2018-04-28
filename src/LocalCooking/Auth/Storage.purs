@@ -1,6 +1,6 @@
 module LocalCooking.Auth.Storage where
 
-import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.AccessToken.Auth (AuthToken)
 
 import Prelude
 import Data.Maybe (Maybe (..))

@@ -2,7 +2,7 @@ module LocalCooking.Spec.Drawers.LeftMenu where
 
 import LocalCooking.Window (WindowSize)
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink)
-import LocalCooking.Common.AuthToken (AuthToken)
+import LocalCooking.Common.AccessToken.Auth (AuthToken)
 
 import Prelude
 import Data.Tuple (Tuple (..))
