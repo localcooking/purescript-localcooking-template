@@ -31,7 +31,7 @@ import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut (jsonParser, decodeJson, encodeJson)
 import Text.Email.Validate (EmailAddress)
-import Control.Monad.Aff (runAff_)
+import Control.Monad.Aff (runAff_, delay)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
 import Control.Monad.Eff.Console (CONSOLE, log)
@@ -208,6 +208,7 @@ defaultMain
           _ -> log "Failure in calling privacy policy queue?"
     runAff_ go $ do
       liftEff $ log "Calling..."
+      delay $ Milliseconds 200.0
       OneIO.callAsync privacyPolicyDialogQueue unit
 
   -- for `back` compatibility while being driven by `siteLinksSignal`
