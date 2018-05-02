@@ -72,15 +72,11 @@ instance encodeJsonAuthTokenDeltaIn :: EncodeJson AuthTokenDeltaIn where
 
 
 data AuthTokenDeltaOut
-  = AuthTokenDeltaOutNew AuthToken
-  | AuthTokenDeltaOutRevoked
+  = AuthTokenDeltaOutRevoked
 
 instance decodeJsonAuthTokenDeltaOut :: DecodeJson AuthTokenDeltaOut where
   decodeJson json = do
-    let obj = do
-          o <- decodeJson json
-          AuthTokenDeltaOutNew <$> o .? "new"
-        str = do
+    let str = do
           s <- decodeJson json
           case unit of
             _ | s == "revoked" -> pure AuthTokenDeltaOutRevoked

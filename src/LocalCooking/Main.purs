@@ -367,6 +367,8 @@ defaultMain
     unpackClient (Topic ["template", "passwordVerify"]) (sparrowStaticClientQueues passwordVerifyQueues)
     deps
 
+  ( userDetailsLoadedQueue :: One.Queue (read :: READ) (Effects eff) Unit
+    ) <- One.readOnly <$> One.newQueue
   -- user details fetcher and oblitorator
   let userDetailsOnAuth mAuth = case mAuth of
         Nothing -> IxSignal.set Nothing userEmailSignal
@@ -374,7 +376,7 @@ defaultMain
           OneIO.callAsyncEff userEmailQueues
             (\mInitOut ->
                 case mInitOut of
-                  Nothing -> do
+                  Nothing -> do -- FIXME applicative queues & signals?
                     IxSignal.set Nothing userEmailSignal
                     One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
                   Just initOut -> case initOut of
@@ -386,6 +388,7 @@ defaultMain
             )
             (UserEmailInitIn authToken)
   IxSignal.subscribe userDetailsOnAuth authTokenSignal
+  IxSignal.subscribe (\_ -> One.putQueue (One.allowWriting userDetailsLoadedQueue) unit) userEmailQueue
 
 
   -- Run User Interface
