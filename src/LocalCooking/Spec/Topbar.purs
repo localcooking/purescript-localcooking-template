@@ -3,6 +3,7 @@ module LocalCooking.Spec.Topbar where
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation, toLocation, rootLink, getUserDetailsLink, userDetailsLink)
 import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
+import LocalCooking.User (class UserDetails, getEmailAddress)
 
 import Prelude
 import Data.URI (URI)
@@ -42,46 +43,47 @@ import IxSignal.Internal as IxSignal
 
 
 
-type State siteLinks =
+type State siteLinks userDetails =
   { windowSize :: WindowSize
   , currentPage :: siteLinks
   , authToken :: Maybe AuthToken
-  , userEmail :: Maybe EmailAddress
+  , userDetails :: Maybe userDetails
   }
 
-initialState :: forall siteLinks
-              . { initWindowSize :: WindowSize
-                , initSiteLinks :: siteLinks
-                , initAuthToken :: Maybe AuthToken
-                , initUserEmail :: Maybe EmailAddress
-                } -> State siteLinks
-initialState {initWindowSize,initSiteLinks,initAuthToken,initUserEmail} =
+initialState :: forall siteLinks userDetails
+              . { initWindowSize  :: WindowSize
+                , initSiteLinks   :: siteLinks
+                , initAuthToken   :: Maybe AuthToken
+                , initUserDetails :: Maybe userDetails
+                } -> State siteLinks userDetails
+initialState {initWindowSize,initSiteLinks,initAuthToken,initUserDetails} =
   { windowSize: initWindowSize
   , currentPage: initSiteLinks
   , authToken: initAuthToken
-  , userEmail: initUserEmail
+  , userDetails: initUserDetails
   }
 
-data Action siteLinks
+data Action siteLinks userDetails
   = OpenLogin
   | ClickedMobileMenuButton
   | ChangedWindowSize WindowSize
   | ChangedCurrentPage siteLinks
   | ChangedAuthToken (Maybe AuthToken)
-  | ChangedUserEmail (Maybe EmailAddress)
+  | ChangedUserDetails (Maybe userDetails)
   | Clicked siteLinks
 
 type Effects eff =
-  ( ref :: REF
+  ( ref       :: REF
+  , uuid      :: GENUUID
   , exception :: EXCEPTION
-  , uuid :: GENUUID
   | eff)
 
 
-spec :: forall eff siteLinks userDetailsLinks
+spec :: forall eff siteLinks userDetailsLinks userDetails
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => Eq siteLinks
      => ToLocation siteLinks
+     => UserDetails userDetails
      => { toURI :: Location -> URI
         , openLogin :: Eff (Effects eff) Unit
         , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -89,17 +91,17 @@ spec :: forall eff siteLinks userDetailsLinks
         , windowSizeSignal :: IxSignal (Effects eff) WindowSize
         , currentPageSignal :: IxSignal (Effects eff) siteLinks
         , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-        , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+        , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
         , imageSrc :: Location
         , buttons :: { toURI :: Location -> URI
                       , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                       , currentPageSignal :: IxSignal (Effects eff) siteLinks
                       , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                       , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                      , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                      , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                       } -> Array R.ReactElement
         }
-     -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
+     -> T.Spec (Effects eff) (State siteLinks userDetails) Unit (Action siteLinks userDetails)
 spec
   { toURI
   , openLogin
@@ -108,7 +110,7 @@ spec
   , windowSizeSignal
   , currentPageSignal
   , authTokenSignal
-  , userEmailSignal
+  , userDetailsSignal
   , imageSrc
   , buttons
   } = T.simpleSpec performAction render
@@ -119,10 +121,10 @@ spec
       ChangedWindowSize w -> void $ T.cotransform _ { windowSize = w }
       ChangedCurrentPage x -> void $ T.cotransform _ { currentPage = x }
       ChangedAuthToken x -> void $ T.cotransform _ { authToken = x }
-      ChangedUserEmail e -> void $ T.cotransform _ { userEmail = e }
+      ChangedUserDetails e -> void $ T.cotransform _ { userDetails = e }
       Clicked x -> liftEff (siteLinks x)
 
-    render :: T.Render (State siteLinks) Unit (Action siteLinks)
+    render :: T.Render (State siteLinks userDetails) Unit (Action siteLinks userDetails)
     render dispatch props state children =
       [ appBar {color: AppBar.default, position: AppBar.fixed}
         [ toolbar {style: createStyles {display: "flex"}} $
@@ -153,24 +155,24 @@ spec
                      , currentPageSignal
                      , windowSizeSignal
                      , authTokenSignal
-                     , userEmailSignal
+                     , userDetailsSignal
                      }
           ) <>
-          [ R.div [RP.style {flex: 1, display: "flex", flexDirection: "row-reverse"}] $ case state.userEmail of
+          [ R.div [RP.style {flex: 1, display: "flex", flexDirection: "row-reverse"}] $ case state.userDetails of
                Nothing ->
                 [ button
                   { color: Button.inherit
                   , onTouchTap: mkEffFn1 \_ -> dispatch OpenLogin
                   } [R.text "Login"]
                 ]
-               Just email ->
+               Just userDetails ->
                 [ button -- TODO cart iconButton
                   { color: Button.inherit
                   , onTouchTap: mkEffFn1 \_ -> dispatch $ Clicked $ userDetailsLink Nothing :: siteLinks
                   , disabled: case getUserDetailsLink state.currentPage of
                     Just _ -> true
                     _ -> false
-                  } [R.text $ Email.toString email]
+                  } [R.text $ Email.toString $ getEmailAddress userDetails]
                 ]
           ]
         ]
@@ -178,17 +180,18 @@ spec
 
 
 
-topbar :: forall eff siteLinks userDetailsLinks
+topbar :: forall eff siteLinks userDetailsLinks userDetails
         . LocalCookingSiteLinks siteLinks userDetailsLinks
        => Eq siteLinks
        => ToLocation siteLinks
+       => UserDetails userDetails
        => { toURI :: Location -> URI
           , openLogin :: Eff (Effects eff) Unit
           , mobileMenuButtonSignal :: Queue (write :: WRITE) (Effects eff) Unit
           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
           , currentPageSignal :: IxSignal (Effects eff) siteLinks
           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
           , siteLinks :: siteLinks -> Eff (Effects eff) Unit
           , imageSrc :: Location
           , buttons :: { toURI :: Location -> URI
@@ -196,7 +199,7 @@ topbar :: forall eff siteLinks userDetailsLinks
                         , currentPageSignal :: IxSignal (Effects eff) siteLinks
                         , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                         , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                        , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                        , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                         } -> Array R.ReactElement
           } -> R.ReactElement
 topbar
@@ -207,7 +210,7 @@ topbar
   , mobileMenuButtonSignal
   , currentPageSignal
   , authTokenSignal
-  , userEmailSignal
+  , userDetailsSignal
   , imageSrc
   , buttons
   } =
@@ -215,7 +218,7 @@ topbar
         { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
         , initWindowSize: unsafePerformEff $ IxSignal.get windowSizeSignal
         , initAuthToken: unsafePerformEff $ IxSignal.get authTokenSignal
-        , initUserEmail: unsafePerformEff $ IxSignal.get userEmailSignal
+        , initUserDetails: unsafePerformEff $ IxSignal.get userDetailsSignal
         }
       {spec:reactSpec,dispatcher} = T.createReactSpec
         ( spec
@@ -225,7 +228,7 @@ topbar
           , currentPageSignal
           , windowSizeSignal
           , authTokenSignal
-          , userEmailSignal
+          , userDetailsSignal
           , mobileMenuButtonSignal
           , imageSrc
           , buttons
@@ -240,8 +243,8 @@ topbar
             currentPageSignal
             (\this x -> unsafeCoerceEff $ dispatcher this (ChangedCurrentPage x))
         $ Signal.whileMountedIxUUID
-            userEmailSignal
-            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedUserEmail x))
+            userDetailsSignal
+            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedUserDetails x))
         $ Signal.whileMountedIxUUID
             authTokenSignal
             (\this x -> unsafeCoerceEff $ dispatcher this (ChangedAuthToken x))

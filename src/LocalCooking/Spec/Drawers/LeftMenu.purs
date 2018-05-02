@@ -63,20 +63,20 @@ type Effects eff =
   | eff)
 
 
-spec :: forall eff siteLinks userDetailsLinks
+spec :: forall eff siteLinks userDetailsLinks userDetails
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => { siteLinks :: siteLinks -> Eff (Effects eff) Unit
         , windowSizeSignal :: IxSignal (Effects eff) WindowSize
         , toURI :: Location -> URI
         , currentPageSignal :: IxSignal (Effects eff) siteLinks
         , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-        , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+        , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
         , buttons :: { toURI :: Location -> URI
                       , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                       , currentPageSignal :: IxSignal (Effects eff) siteLinks
                       , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                       , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                      , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                      , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                       } -> Array R.ReactElement
         }
      -> T.Spec (Effects eff) State Unit (Action siteLinks)
@@ -85,7 +85,7 @@ spec
   , windowSizeSignal
   , currentPageSignal
   , authTokenSignal
-  , userEmailSignal
+  , userDetailsSignal
   , toURI
   , buttons
   } = T.simpleSpec performAction render
@@ -140,13 +140,13 @@ spec
                , currentPageSignal
                , windowSizeSignal
                , authTokenSignal
-               , userEmailSignal
+               , userDetailsSignal
                }
         ]
       ]
 
 
-leftMenu :: forall eff siteLinks userDetailsLinks
+leftMenu :: forall eff siteLinks userDetailsLinks userDetails
           . LocalCookingSiteLinks siteLinks userDetailsLinks
          => { mobileDrawerOpenSignal :: Queue (read :: READ) (Effects eff) Unit
             , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -154,13 +154,13 @@ leftMenu :: forall eff siteLinks userDetailsLinks
             , toURI :: Location -> URI
             , currentPageSignal :: IxSignal (Effects eff) siteLinks
             , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-            , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+            , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
             , buttons :: { toURI :: Location -> URI
                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                         , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                         , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                          } -> Array R.ReactElement
             }
          -> R.ReactElement
@@ -171,7 +171,7 @@ leftMenu
   , windowSizeSignal
   , currentPageSignal
   , authTokenSignal
-  , userEmailSignal
+  , userDetailsSignal
   , buttons
   } =
   let init =
@@ -185,7 +185,7 @@ leftMenu
             , windowSizeSignal
             , currentPageSignal
             , authTokenSignal
-            , userEmailSignal
+            , userDetailsSignal
             , buttons
             }
           )

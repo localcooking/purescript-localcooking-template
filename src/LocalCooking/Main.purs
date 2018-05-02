@@ -13,6 +13,7 @@ import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues,
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
+import LocalCooking.User (class UserDetails)
 
 import Sparrow.Client (allocateDependencies, unpackClient)
 import Sparrow.Client.Queue (newSparrowClientQueues, newSparrowStaticClientQueues, sparrowClientQueues, sparrowStaticClientQueues)
@@ -31,7 +32,7 @@ import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut (jsonParser, decodeJson, encodeJson)
 import Text.Email.Validate (EmailAddress)
-import Control.Monad.Aff (runAff_, delay)
+import Control.Monad.Aff (ParAff, Aff, runAff_, delay, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
 import Control.Monad.Eff.Console (CONSOLE, log)
@@ -88,13 +89,13 @@ type Effects eff =
   | eff)
 
 
-type LocalCookingArgs siteLinks eff =
+type LocalCookingArgs siteLinks userDetails eff =
   { content :: { currentPageSignal :: IxSignal eff siteLinks
                , windowSizeSignal :: IxSignal eff WindowSize
                , siteLinks :: siteLinks -> Eff eff Unit
                , toURI :: Location -> URI
                , authTokenSignal :: IxSignal eff (Maybe AuthToken)
-               , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
+               , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                } -> Array ReactElement
   , topbar ::
     { imageSrc :: Location
@@ -103,7 +104,7 @@ type LocalCookingArgs siteLinks eff =
                  , currentPageSignal :: IxSignal eff siteLinks
                  , windowSizeSignal :: IxSignal eff WindowSize
                  , authTokenSignal :: IxSignal eff (Maybe AuthToken)
-                 , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
+                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                  } -> Array ReactElement
     }
   , leftDrawer ::
@@ -112,7 +113,7 @@ type LocalCookingArgs siteLinks eff =
                  , currentPageSignal :: IxSignal eff siteLinks
                  , windowSizeSignal :: IxSignal eff WindowSize
                  , authTokenSignal :: IxSignal eff (Maybe AuthToken)
-                 , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
+                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                  } -> Array ReactElement
     }
   , userDetails ::
@@ -121,15 +122,16 @@ type LocalCookingArgs siteLinks eff =
                  , currentPageSignal :: IxSignal eff siteLinks
                  , windowSizeSignal :: IxSignal eff WindowSize
                  , authTokenSignal :: IxSignal eff (Maybe AuthToken)
-                 , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
+                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                  } -> Array ReactElement
     , content :: { toURI :: Location -> URI
                  , siteLinks :: siteLinks -> Eff eff Unit
                  , currentPageSignal :: IxSignal eff siteLinks
                  , windowSizeSignal :: IxSignal eff WindowSize
                  , authTokenSignal :: IxSignal eff (Maybe AuthToken)
-                 , userEmailSignal :: IxSignal eff (Maybe EmailAddress)
+                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                  } -> Array ReactElement
+    , obtain  :: ParAff eff (Maybe EmailAddress) -> Aff eff (Maybe userDetails)
     }
   , deps :: SparrowClientT eff (Eff eff) Unit
   , env :: Env
@@ -140,13 +142,14 @@ type LocalCookingArgs siteLinks eff =
 
 
 
-defaultMain :: forall eff siteLinks userDetailsLinks
+defaultMain :: forall eff siteLinks userDetailsLinks userDetails
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => Eq siteLinks
             => ToLocation siteLinks
             => FromLocation siteLinks
             => Show siteLinks
-            => LocalCookingArgs siteLinks (Effects eff)
+            => UserDetails userDetails
+            => LocalCookingArgs siteLinks userDetails (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain
   { deps
@@ -188,7 +191,7 @@ defaultMain
   ( authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
     ) <- IxSignal.make Nothing
 
-  ( userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+  ( userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
     ) <- IxSignal.make Nothing
 
   -- FIXME do this at registration
@@ -372,24 +375,30 @@ defaultMain
     unpackClient (Topic ["template", "passwordVerify"]) (sparrowStaticClientQueues passwordVerifyQueues)
     deps
 
+
   -- user details fetcher and oblitorator
   let userDetailsOnAuth mAuth = case mAuth of
-        Nothing -> IxSignal.set Nothing userEmailSignal
+        Nothing -> IxSignal.set Nothing userDetailsSignal
         Just authToken -> do
-          OneIO.callAsyncEff userEmailQueues
-            (\mInitOut ->
-                case mInitOut of
-                  Nothing -> do
-                    IxSignal.set Nothing userEmailSignal
-                    One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
-                  Just initOut -> case initOut of
-                    UserEmailInitOutSuccess email ->
-                      IxSignal.set (Just email) userEmailSignal
-                    UserEmailInitOutNoAuth -> do
-                      IxSignal.set Nothing userEmailSignal
-                      One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth)
-            )
-            (UserEmailInitIn authToken)
+          let resolve eX = case eX of
+                Left _ -> do
+                  IxSignal.set Nothing userDetailsSignal
+                  One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
+                Right mUserDetails ->
+                  IxSignal.set mUserDetails userDetailsSignal
+                  -- TODO send full user details
+
+          runAff_ resolve $ userDetails.obtain $ parallel $ do
+            mInitOut <- OneIO.callAsync userEmailQueues (UserEmailInitIn authToken)
+            case mInitOut of
+              Nothing -> do
+                liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
+                pure Nothing
+              Just initOut -> case initOut of
+                UserEmailInitOutSuccess email -> pure (Just email)
+                UserEmailInitOutNoAuth -> do
+                  liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
+                  pure Nothing
   IxSignal.subscribe userDetailsOnAuth authTokenSignal
 
 
@@ -405,7 +414,7 @@ defaultMain
           , preliminaryAuthToken
           , errorMessageQueue
           , authTokenSignal
-          , userEmailSignal
+          , userDetailsSignal
           , privacyPolicyDialogQueue
           , dependencies:
             { authTokenQueues
@@ -414,7 +423,16 @@ defaultMain
             , securityQueues
             , passwordVerifyQueues
             }
-          , templateArgs: {content,topbar,leftDrawer,palette,userDetails}
+          , templateArgs:
+            { content
+            , topbar
+            , leftDrawer
+            , palette
+            , userDetails:
+              { buttons: userDetails.buttons
+              , content: userDetails.content
+              }
+            }
           , env
           , extendedNetwork
           }

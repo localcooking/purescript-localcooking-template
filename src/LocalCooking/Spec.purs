@@ -24,6 +24,7 @@ import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
+import LocalCooking.User (class UserDetails)
 
 import Sparrow.Client.Queue (callSparrowClientQueues)
 
@@ -114,10 +115,11 @@ type Effects eff =
   , scrypt     :: SCRYPT
   | eff)
 
-spec :: forall eff siteLinks userDetailsLinks
+spec :: forall eff siteLinks userDetailsLinks userDetails
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => Eq siteLinks
      => ToLocation siteLinks
+     => UserDetails userDetails
      => { toURI               :: Location -> URI
         , siteLinks           :: siteLinks -> Eff (Effects eff) Unit
         , env                 :: Env
@@ -126,7 +128,7 @@ spec :: forall eff siteLinks userDetailsLinks
         , windowSizeSignal    :: IxSignal (Effects eff) WindowSize
         , currentPageSignal   :: IxSignal (Effects eff) siteLinks
         , authTokenSignal     :: IxSignal (Effects eff) (Maybe AuthToken)
-        , userEmailSignal     :: IxSignal (Effects eff) (Maybe EmailAddress)
+        , userDetailsSignal   :: IxSignal (Effects eff) (Maybe userDetails)
         , dependencies ::
           { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
           , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
@@ -145,7 +147,7 @@ spec :: forall eff siteLinks userDetailsLinks
                        , currentPageSignal :: IxSignal (Effects eff) siteLinks
                        , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                       , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                       , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                        } -> Array R.ReactElement
           , topbar ::
             { imageSrc :: Location
@@ -154,7 +156,7 @@ spec :: forall eff siteLinks userDetailsLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                           } -> Array R.ReactElement
             }
           , leftDrawer ::
@@ -163,7 +165,7 @@ spec :: forall eff siteLinks userDetailsLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                           } -> Array R.ReactElement
             }
           , userDetails ::
@@ -172,14 +174,14 @@ spec :: forall eff siteLinks userDetailsLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                           } -> Array R.ReactElement
             , content :: { toURI :: Location -> URI
                           , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                           } -> Array R.ReactElement
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
@@ -197,7 +199,7 @@ spec
   , dependencies: dependencies@{authTokenQueues:{deltaIn: authTokenQueuesDeltaIn}}
   , dialog
   , authTokenSignal
-  , userEmailSignal
+  , userDetailsSignal
   , templateArgs: templateArgs@{palette,content,userDetails}
   , env
   , extendedNetwork
@@ -250,7 +252,7 @@ spec
         , mobileMenuButtonSignal: One.writeOnly mobileMenuButtonSignal
         , currentPageSignal
         , authTokenSignal
-        , userEmailSignal
+        , userDetailsSignal
         , imageSrc: templateArgs.topbar.imageSrc
         , buttons: templateArgs.topbar.buttons
         }
@@ -290,7 +292,7 @@ spec
         , windowSizeSignal
         , authTokenSignal
         , currentPageSignal
-        , userEmailSignal
+        , userDetailsSignal
         , buttons: templateArgs.leftDrawer.buttons
         }
       , messages
@@ -368,7 +370,7 @@ spec
                                 , currentPageSignal
                                 , windowSizeSignal
                                 , authTokenSignal
-                                , userEmailSignal
+                                , userDetailsSignal
                                 , toURI
                                 }
                             <>
@@ -392,7 +394,7 @@ spec
                             , currentPageSignal
                             , windowSizeSignal
                             , authTokenSignal
-                            , userEmailSignal
+                            , userDetailsSignal
                             , toURI
                             }
                     in  case mUserDetails of
@@ -424,7 +426,7 @@ spec
                         , currentPageSignal
                         , windowSizeSignal
                         , authTokenSignal
-                        , userEmailSignal
+                        , userDetailsSignal
                         , toURI
                         }
             ]
@@ -469,10 +471,11 @@ spec
 
 
 
-app :: forall eff siteLinks userDetailsLinks
+app :: forall eff siteLinks userDetailsLinks userDetails
      . LocalCookingSiteLinks siteLinks userDetailsLinks
     => Eq siteLinks
     => ToLocation siteLinks
+    => UserDetails userDetails
     => { toURI                :: Location -> URI
        , siteLinks            :: siteLinks -> Eff (Effects eff) Unit
        , development          :: Boolean
@@ -481,7 +484,7 @@ app :: forall eff siteLinks userDetailsLinks
        , windowSizeSignal     :: IxSignal (Effects eff) WindowSize
        , currentPageSignal    :: IxSignal (Effects eff) siteLinks
        , authTokenSignal      :: IxSignal (Effects eff) (Maybe AuthToken)
-       , userEmailSignal      :: IxSignal (Effects eff) (Maybe EmailAddress)
+       , userDetailsSignal    :: IxSignal (Effects eff) (Maybe userDetails)
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
        , dependencies ::
           { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
@@ -496,7 +499,7 @@ app :: forall eff siteLinks userDetailsLinks
                        , currentPageSignal :: IxSignal (Effects eff) siteLinks
                        , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                       , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                       , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                        } -> Array R.ReactElement
           , topbar ::
             { imageSrc :: Location
@@ -505,7 +508,7 @@ app :: forall eff siteLinks userDetailsLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                           } -> Array R.ReactElement
             }
           , leftDrawer ::
@@ -514,7 +517,7 @@ app :: forall eff siteLinks userDetailsLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                           } -> Array R.ReactElement
             }
           , userDetails ::
@@ -523,14 +526,14 @@ app :: forall eff siteLinks userDetailsLinks
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                           } -> Array R.ReactElement
             , content :: { toURI :: Location -> URI
                           , siteLinks :: siteLinks -> Eff (Effects eff) Unit
                           , currentPageSignal :: IxSignal (Effects eff) siteLinks
                           , windowSizeSignal :: IxSignal (Effects eff) WindowSize
                           , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userEmailSignal :: IxSignal (Effects eff) (Maybe EmailAddress)
+                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                           } -> Array R.ReactElement
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
@@ -550,7 +553,7 @@ app
   , preliminaryAuthToken
   , errorMessageQueue
   , authTokenSignal
-  , userEmailSignal
+  , userDetailsSignal
   , dependencies
   , templateArgs
   , env
@@ -577,7 +580,7 @@ app
             , privacyPolicyQueue: privacyPolicyDialogQueue
             }
           , authTokenSignal
-          , userEmailSignal
+          , userDetailsSignal
           , templateArgs
           , env
           , extendedNetwork
