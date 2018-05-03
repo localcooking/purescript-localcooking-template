@@ -14,35 +14,8 @@ import Sparrow.Client.Queue (SparrowStaticClientQueues)
 
 
 type UserEmailInitIn = AuthInitIn AuthToken JSONUnit
--- newtype UserEmailInitIn = UserEmailInitIn AuthToken
-
--- instance encodeJsonUserEmailInitIn :: EncodeJson UserEmailInitIn where
---   encodeJson (UserEmailInitIn x) = "authToken" := x ~> jsonEmptyObject
 
 type UserEmailInitOut = AuthInitOut EmailAddress
--- data UserEmailInitOut
---   = UserEmailInitOutNoAuth
---   | UserEmailInitOutSuccess EmailAddress
-
--- derive instance genericUserEmailInitOut :: Generic UserEmailInitOut
-
--- instance showUserEmailInitOut :: Show UserEmailInitOut where
---   show = gShow
-
--- instance decodeJsonUserEmailInitOut :: DecodeJson UserEmailInitOut where
---   decodeJson json = do
---     let str = do
---           s <- decodeJson json
---           case unit of
---             _ | s == "no-auth" -> pure UserEmailInitOutNoAuth
---               | otherwise -> fail "Not a UserEmailInitOut"
---         obj = do
---           o <- decodeJson json
---           e <- o .? "email"
---           case emailAddress e of
---             Nothing -> fail "Not a UserEmailInitOutSuccess"
---             Just email -> pure (UserEmailInitOutSuccess email)
---     str <|> obj
 
 
 type UserEmailSparrowClientQueues eff =

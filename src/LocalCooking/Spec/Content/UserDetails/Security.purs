@@ -8,7 +8,8 @@ import LocalCooking.Spec.Snackbar (SnackbarMessage (SnackbarMessageSecurity), Se
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.Password (HashedPassword, hashPassword)
-import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues, SecurityInitIn (..), SecurityInitOut (..))
+import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues, SecurityInitIn' (..), SecurityInitOut' (..))
+import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -123,21 +124,24 @@ spec
                         { password: passwordString
                         , salt: env.salt
                         }
-                      OneIO.callAsync securityQueues $ SecurityInitIn {authToken,email,newPassword,oldPassword}
+                      OneIO.callAsync securityQueues $ AuthInitIn
+                        { token: authToken
+                        , subj: SecurityInitIn' {email,newPassword,oldPassword}
+                        }
                     liftEff $ do
                       case mErr of
                         Nothing -> pure unit
                         Just initOut -> One.putQueue errorMessageQueue $ case initOut of
-                          SecurityInitOutSuccess ->
-                            SnackbarMessageSecurity SecuritySaveSuccess
-                          SecurityInitOutFailure ->
+                          AuthInitOutNoAuth ->
                             SnackbarMessageSecurity SecuritySaveFailed
-                          SecurityInitOutNoAuth ->
-                            SnackbarMessageSecurity SecuritySaveFailed
+                          AuthInitOut {subj: initOut'} -> case initOut' of
+                            SecurityInitOutSuccess ->
+                              SnackbarMessageSecurity SecuritySaveSuccess
+                            SecurityInitOutFailure ->
+                              SnackbarMessageSecurity SecuritySaveFailed
                       IxSignal.set false pendingSignal
               _ -> pure unit
           _ -> pure unit
-        
 
     render :: T.Render State Unit Action
     render dispatch props state children =
