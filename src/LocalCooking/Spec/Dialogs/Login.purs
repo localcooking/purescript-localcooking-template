@@ -134,6 +134,7 @@ loginDialog
             , emailSignal: emailSignal
             , parentSignal: Nothing
             , updatedQueue: emailQueue
+            , setValueQueue: Nothing
             }
           , Password.password
             { label: R.text "Password"
@@ -190,7 +191,7 @@ loginDialog
             (PasswordVerifyInitInUnauth {email,password: hashedPassword})
           case mVerify of
             Just PasswordVerifyInitOutSuccess -> do
-              pure (Just {email,password: hashedPassword})
+              pure (Just {email,password: hashedPassword}) -- FIXME delay until other queues are finished - user details, auth token, etc.
             _ -> do
               liftEff $ case mVerify of
                 Nothing ->

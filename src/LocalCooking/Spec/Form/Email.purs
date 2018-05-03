@@ -4,21 +4,24 @@ import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
 import Text.Email.Validate (EmailAddress, emailAddress)
+import Text.Email.Validate as Email
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
-import Control.Monad.Eff.Unsafe (unsafePerformEff)
+import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 
 import Thermite as T
 import React as R
 import React.DOM as R
+import React.Queue.WhileMounted as Queue
 
 import MaterialUI.TextField (textField)
 
 import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
-import Queue (READ)
+import Queue (READ, WRITE)
+import Queue.One as One
 import IxQueue (IxQueue)
 import IxQueue as IxQueue
 
@@ -39,6 +42,7 @@ data Action
   = ChangedEmail String
   | EmailUnfocused
   | ReRender
+  | GotExternalValue String
 
 type Effects eff =
   ( ref :: REF
@@ -74,6 +78,11 @@ spec
         performAction ReRender props state
         liftEff $ IxQueue.broadcastIxQueue (IxQueue.allowWriting updatedQueue) unit
       ReRender -> void $ T.cotransform _ { rerender = unit }
+      GotExternalValue x -> do
+        void $ T.cotransform _ { email = x }
+        liftEff $ IxSignal.set (Left x) emailSignal
+        performAction ReRender props state
+        liftEff $ IxQueue.broadcastIxQueue (IxQueue.allowWriting updatedQueue) unit
 
     render :: T.Render State Unit Action
     render dispatch props state children =
@@ -101,15 +110,16 @@ spec
 
 
 email :: forall eff
-       . { label        :: R.ReactElement
-         , fullWidth    :: Boolean
-         , name         :: String
-         , id           :: String
-         , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
-         , emailSignal  :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
-         , parentSignal :: Maybe (IxSignal (Effects eff) (Either String (Maybe EmailAddress))) --for confirm
+       . { label         :: R.ReactElement
+         , fullWidth     :: Boolean
+         , name          :: String
+         , id            :: String
+         , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
+         , emailSignal   :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+         , parentSignal  :: Maybe (IxSignal (Effects eff) (Either String (Maybe EmailAddress))) --for confirm
+         , setValueQueue :: Maybe (One.Queue (write :: WRITE) (Effects eff) String)
          } -> R.ReactElement
-email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal} =
+email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setValueQueue} =
   let init =
         { initEmail: case unsafePerformEff (IxSignal.get emailSignal) of
              Left e -> e
@@ -126,4 +136,12 @@ email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal} =
             , emailSignal
             , parentSignal
             } ) (initialState init)
-  in  R.createElement (R.createClass reactSpec) unit []
+      reactSpec' =
+        case setValueQueue of
+          Nothing -> reactSpec
+          Just setValueQueue' ->
+            Queue.whileMountedOne
+              (One.allowReading setValueQueue')
+              (\this x -> unsafeCoerceEff $ dispatcher this $ GotExternalValue x)
+              reactSpec
+  in  R.createElement (R.createClass reactSpec') unit []

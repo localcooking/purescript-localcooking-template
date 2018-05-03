@@ -7,6 +7,7 @@ import Data.Either (Either (..))
 import Data.URI.Location (parseLocation, printLocation)
 import Data.Argonaut (class EncodeJson, class DecodeJson, decodeJson, (:=), (~>), jsonEmptyObject, (.?), fail)
 import Data.Generic (class Generic, gEq)
+import Control.Alternative ((<|>))
 import Text.Parsing.StringParser (runParser)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
@@ -39,3 +40,45 @@ instance decodeJsonFacebookLoginState :: FromLocation siteLinks => DecodeJson (F
       Right loc -> case fromLocation loc of
         Left e -> fail e
         Right origin -> pure $ FacebookLoginState {origin}
+
+
+
+data FacebookLoginUnsavedFormData
+  = FacebookLoginUnsavedFormDataRegister
+    { email :: String
+    , emailConfirm :: String
+    }
+  | FacebookLoginUnsavedFormDataSecurity
+    { email :: String
+    , emailConfirm :: String
+    }
+
+instance encodeJsonFacebookLoginUnsavedFormData :: EncodeJson FacebookLoginUnsavedFormData where
+  encodeJson x = case x of
+    FacebookLoginUnsavedFormDataRegister {email,emailConfirm}
+      -> "register" :=
+         ( "email" := email
+         ~> "emailConfirm" := emailConfirm
+         ~> jsonEmptyObject )
+      ~> jsonEmptyObject
+    FacebookLoginUnsavedFormDataSecurity {email,emailConfirm}
+      -> "security" :=
+         ( "email" := email
+         ~> "emailConfirm" := emailConfirm
+         ~> jsonEmptyObject )
+      ~> jsonEmptyObject
+
+instance decodeJsonFacebookLoginUnsavedFormData :: DecodeJson FacebookLoginUnsavedFormData where
+  decodeJson json = do
+    o <- decodeJson json
+    let register = do
+          o' <- o .? "register"
+          email <- o' .? "email"
+          emailConfirm <- o' .? "emailConfirm"
+          pure (FacebookLoginUnsavedFormDataRegister {email,emailConfirm})
+        security = do
+          o' <- o .? "security"
+          email <- o' .? "email"
+          emailConfirm <- o' .? "emailConfirm"
+          pure (FacebookLoginUnsavedFormDataSecurity {email,emailConfirm})
+    register <|> security

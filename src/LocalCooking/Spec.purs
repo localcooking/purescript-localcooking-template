@@ -25,6 +25,7 @@ import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
 import LocalCooking.User (class UserDetails)
+import Facebook.State (FacebookLoginUnsavedFormData)
 
 import Sparrow.Client.Queue (callSparrowClientQueues)
 
@@ -40,7 +41,7 @@ import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
-import Control.Monad.Eff.Ref (REF)
+import Control.Monad.Eff.Ref (REF, Ref)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Now (NOW)
 import Control.Monad.Eff.Timer (TIMER, setTimeout)
@@ -129,6 +130,7 @@ spec :: forall eff siteLinks userDetailsLinks userDetails
         , currentPageSignal   :: IxSignal (Effects eff) siteLinks
         , authTokenSignal     :: IxSignal (Effects eff) (Maybe AuthToken)
         , userDetailsSignal   :: IxSignal (Effects eff) (Maybe userDetails)
+        , initFormDataRef     :: Ref (Maybe FacebookLoginUnsavedFormData)
         , dependencies ::
           { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
           , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
@@ -203,6 +205,7 @@ spec
   , templateArgs: templateArgs@{palette,content,userDetails}
   , env
   , extendedNetwork
+  , initFormDataRef
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
@@ -404,6 +407,7 @@ spec
                             , securityQueues: dependencies.securityQueues
                             , authenticateDialogQueue: dialog.authenticateQueue
                             , authTokenSignal
+                            , initFormDataRef
                             }
                           ]
                         | otherwise -> def
@@ -416,6 +420,7 @@ spec
                         , errorMessageQueue: One.writeOnly errorMessageQueue
                         , toRoot: siteLinks rootLink
                         , env
+                        , initFormDataRef
                         }
                       ]
                   | otherwise ->
@@ -484,6 +489,7 @@ app :: forall eff siteLinks userDetailsLinks userDetails
        , authTokenSignal      :: IxSignal (Effects eff) (Maybe AuthToken)
        , userDetailsSignal    :: IxSignal (Effects eff) (Maybe userDetails)
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
+       , initFormDataRef      :: Ref (Maybe FacebookLoginUnsavedFormData)
        , dependencies ::
           { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
           , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
@@ -557,6 +563,7 @@ app
   , env
   , extendedNetwork
   , privacyPolicyDialogQueue
+  , initFormDataRef
   } =
   let init =
         { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
@@ -582,6 +589,7 @@ app
           , templateArgs
           , env
           , extendedNetwork
+          , initFormDataRef
           }
         ) (initialState init)
       reactSpec' = Signal.whileMountedIxUUID

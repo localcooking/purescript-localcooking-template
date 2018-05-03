@@ -10,6 +10,7 @@ import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.Password (HashedPassword, hashPassword)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues, SecurityInitIn' (..), SecurityInitOut' (..))
 import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
+import Facebook.State (FacebookLoginUnsavedFormData (FacebookLoginUnsavedFormDataSecurity))
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -17,7 +18,8 @@ import Data.Either (Either (..))
 import Data.UUID (genUUID, GENUUID)
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Base (liftBase)
-import Control.Monad.Eff.Ref (REF)
+import Control.Monad.Eff.Ref (REF, Ref)
+import Control.Monad.Eff.Ref.Extra (takeRef)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Class (liftEff)
@@ -70,12 +72,14 @@ spec :: forall eff
         , authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
         , authTokenSignal         :: IxSignal (Effects eff) (Maybe AuthToken)
         , email ::
-          { signal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
-          , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+          { signal        :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+          , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
+          , setValueQueue :: One.Queue (write :: WRITE) (Effects eff) String
           }
         , emailConfirm ::
-          { signal       :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
-          , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+          { signal        :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+          , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
+          , setValueQueue :: One.Queue (write :: WRITE) (Effects eff) String
           }
         , password ::
           { signal       :: IxSignal (Effects eff) String
@@ -159,6 +163,7 @@ spec
         , emailSignal: email.signal
         , parentSignal: Nothing
         , updatedQueue: email.updatedQueue
+        , setValueQueue: Just email.setValueQueue
         }
       , Email.email
         { label: R.text "Email Confirm"
@@ -168,6 +173,7 @@ spec
         , emailSignal: emailConfirm.signal
         , parentSignal: Just email.signal
         , updatedQueue: emailConfirm.updatedQueue
+        , setValueQueue: Just emailConfirm.setValueQueue
         }
       , Password.password
         { label: R.text "Password"
@@ -212,6 +218,7 @@ security :: forall eff
             , authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
             , securityQueues    :: SecuritySparrowClientQueues (Effects eff)
             , env               :: Env
+            , initFormDataRef   :: Ref (Maybe FacebookLoginUnsavedFormData)
             }
          -> R.ReactElement
 security
@@ -220,6 +227,7 @@ security
   , env
   , securityQueues
   , authTokenSignal
+  , initFormDataRef
   } =
   let {spec: reactSpec, dispatcher} =
         T.createReactSpec
@@ -232,10 +240,12 @@ security
             , email:
               { signal: emailSignal
               , updatedQueue: emailUpdatedQueue
+              , setValueQueue: emailSetValueQueue
               }
             , emailConfirm:
               { signal: emailConfirmSignal
               , updatedQueue: emailConfirmUpdatedQueue
+              , setValueQueue: emailConfirmSetValueQueue
               }
             , password:
               { signal: passwordSignal
@@ -260,16 +270,18 @@ security
   in  R.createElement (R.createClass reactSpec') unit []
   where
     emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
-    emailConfirmSignal = unsafePerformEff $ IxSignal.make $ Left ""
-    passwordSignal = unsafePerformEff (IxSignal.make "")
-    passwordConfirmSignal = unsafePerformEff (IxSignal.make "")
-    submitDisabledSignal = unsafePerformEff (IxSignal.make true)
-    pendingSignal = unsafePerformEff (IxSignal.make false)
     emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    emailSetValueQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
+    emailConfirmSignal = unsafePerformEff $ IxSignal.make $ Left ""
     emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    emailConfirmSetValueQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
+    passwordSignal = unsafePerformEff (IxSignal.make "")
     passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordConfirmSignal = unsafePerformEff (IxSignal.make "")
     passwordConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    pendingSignal = unsafePerformEff (IxSignal.make false)
     submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    submitDisabledSignal = unsafePerformEff (IxSignal.make true)
 
     _ = unsafePerformEff $ do
       k <- show <$> genUUID
@@ -299,3 +311,10 @@ security
         case eEmail of
           Left _ -> pure unit
           Right email -> pure unit -- TODO submit user details security change
+
+      mX <- takeRef initFormDataRef
+      case mX of
+        Just (FacebookLoginUnsavedFormDataSecurity {email,emailConfirm}) -> do
+          One.putQueue emailSetValueQueue email
+          One.putQueue emailConfirmSetValueQueue emailConfirm
+        _ -> pure unit

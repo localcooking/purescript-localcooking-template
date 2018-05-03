@@ -15,6 +15,7 @@ import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowCli
 import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.User (class UserDetails)
+import Facebook.State (FacebookLoginUnsavedFormData)
 
 import Sparrow.Client (allocateDependencies, unpackClient)
 import Sparrow.Client.Queue (newSparrowClientQueues, newSparrowStaticClientQueues, sparrowClientQueues, sparrowStaticClientQueues)
@@ -36,7 +37,7 @@ import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Aff (ParAff, Aff, runAff_, delay, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
-import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
+import Control.Monad.Eff.Ref (REF, Ref, newRef, readRef, writeRef)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Timer (TIMER, setTimeout)
@@ -199,6 +200,8 @@ defaultMain
       PreliminaryAuthToken Nothing -> map Right <$> getStoredAuthToken
       PreliminaryAuthToken (Just eErrX) -> pure (Just eErrX)
 
+  ( initFormDataRef :: Ref (Maybe FacebookLoginUnsavedFormData)
+    ) <- newRef env.formData
 
 
   -- Global emitted snackbar messages
@@ -445,6 +448,7 @@ defaultMain
           , authTokenSignal
           , userDetailsSignal
           , privacyPolicyDialogQueue
+          , initFormDataRef
           , dependencies:
             { authTokenQueues
             , registerQueues
