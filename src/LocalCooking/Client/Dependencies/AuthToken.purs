@@ -81,7 +81,7 @@ instance decodeJsonAuthTokenDeltaOut :: DecodeJson AuthTokenDeltaOut where
           case unit of
             _ | s == "revoked" -> pure AuthTokenDeltaOutRevoked
               | otherwise -> fail "Not a AuthTokenDeltaOut"
-    obj <|> str
+    str
 
 
 

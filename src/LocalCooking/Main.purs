@@ -9,9 +9,10 @@ import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..), Use
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
-import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitOut (..), UserEmailInitIn (..))
+import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitOut, UserEmailInitIn)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
+import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.User (class UserDetails)
 
@@ -89,59 +90,64 @@ type Effects eff =
   | eff)
 
 
+
 type LocalCookingArgs siteLinks userDetails eff =
   { content :: { currentPageSignal :: IxSignal eff siteLinks
-               , windowSizeSignal :: IxSignal eff WindowSize
-               , siteLinks :: siteLinks -> Eff eff Unit
-               , toURI :: Location -> URI
-               , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+               , windowSizeSignal  :: IxSignal eff WindowSize
+               , siteLinks         :: siteLinks -> Eff eff Unit
+               , toURI             :: Location -> URI
+               , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                } -> Array ReactElement
   , topbar ::
     { imageSrc :: Location
-    , buttons :: { toURI :: Location -> URI
-                 , siteLinks :: siteLinks -> Eff eff Unit
+    , buttons :: { toURI             :: Location -> URI
+                 , siteLinks         :: siteLinks -> Eff eff Unit
                  , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal :: IxSignal eff WindowSize
-                 , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+                 , windowSizeSignal  :: IxSignal eff WindowSize
+                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                  , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                  } -> Array ReactElement
     }
   , leftDrawer ::
-    { buttons :: { toURI :: Location -> URI
-                 , siteLinks :: siteLinks -> Eff eff Unit
+    { buttons :: { toURI             :: Location -> URI
+                 , siteLinks         :: siteLinks -> Eff eff Unit
                  , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal :: IxSignal eff WindowSize
-                 , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+                 , windowSizeSignal  :: IxSignal eff WindowSize
+                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                  , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                  } -> Array ReactElement
     }
   , userDetails ::
-    { buttons :: { toURI :: Location -> URI
-                 , siteLinks :: siteLinks -> Eff eff Unit
+    { buttons :: { toURI             :: Location -> URI
+                 , siteLinks         :: siteLinks -> Eff eff Unit
                  , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal :: IxSignal eff WindowSize
-                 , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+                 , windowSizeSignal  :: IxSignal eff WindowSize
+                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                  , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                  } -> Array ReactElement
-    , content :: { toURI :: Location -> URI
-                 , siteLinks :: siteLinks -> Eff eff Unit
+    , content :: { toURI             :: Location -> URI
+                 , siteLinks         :: siteLinks -> Eff eff Unit
                  , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal :: IxSignal eff WindowSize
-                 , authTokenSignal :: IxSignal eff (Maybe AuthToken)
+                 , windowSizeSignal  :: IxSignal eff WindowSize
+                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                  , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                  } -> Array ReactElement
     , obtain  :: ParAff eff (Maybe EmailAddress) -> Aff eff (Maybe userDetails)
     }
-  , deps :: SparrowClientT eff (Eff eff) Unit
-  , env :: Env
+  , deps          :: SparrowClientT eff (Eff eff) Unit
+  , env           :: Env
   , initSiteLinks :: siteLinks
-  , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
+  , palette ::
+    { primary   :: ColorPalette
+    , secondary :: ColorPalette
+    }
   , extendedNetwork :: Array R.ReactElement
   }
 
 
 
+-- | Top-level entry point to the application
 defaultMain :: forall eff siteLinks userDetailsLinks userDetails
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => Eq siteLinks
@@ -162,14 +168,18 @@ defaultMain
   , palette
   , extendedNetwork
   } = do
+  -- inject events
   injectTapEvent
   _ <- registerShim
 
 
+  -- DOM references
   w <- window
   l <- location w
   h <- history w
   d <- document w
+
+  -- initial browser metadata values
   scheme <- Just <<< Scheme <<< String.takeWhile (\c -> c /= ':') <$> protocol l
   authority <- do
     host <- hostname l
@@ -180,21 +190,31 @@ defaultMain
     pure $ Authority Nothing [Tuple (NameAddress host) p]
 
 
+
+
+  -- Fetch the preliminary auth token from `env`, or LocalStorage
   ( preliminaryAuthToken :: PreliminaryAuthToken
     ) <- map PreliminaryAuthToken $ case env.authToken of
       PreliminaryAuthToken Nothing -> map Right <$> getStoredAuthToken
       PreliminaryAuthToken (Just eErrX) -> pure (Just eErrX)
 
+
+
+  -- Global emitted snackbar messages
   ( errorMessageQueue :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
     ) <- One.newQueue
 
+  -- Global AuthToken value
   ( authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
     ) <- IxSignal.make Nothing
 
+  -- Global userDetails value
   ( userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
     ) <- IxSignal.make Nothing
 
-  -- FIXME do this at registration
+
+
+  -- Privacy policy - FIXME do this at registration
   privacyPolicyDialogQueue <- OneIO.newIOQueues
   let privacyPolicyKey = StorageKey "privacypolicy"
   mX <- getItem localStorage privacyPolicyKey
@@ -214,7 +234,8 @@ defaultMain
       delay $ Milliseconds 200.0
       OneIO.callAsync privacyPolicyDialogQueue unit
 
-  -- for `back` compatibility while being driven by `siteLinksSignal`
+
+  -- Global current page value - for `back` compatibility while being driven by `siteLinksSignal`
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks
     ) <- do
     initSiteLink <- do
@@ -224,7 +245,7 @@ defaultMain
         Just _ -> do
           case preliminaryAuthToken of
             PreliminaryAuthToken Nothing -> do
-              log "didn't replace state?"
+              -- in /userDetails while not logged in
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
               replaceState' (rootLink :: siteLinks) h
@@ -234,6 +255,7 @@ defaultMain
         _ | x == registerLink -> do
           case preliminaryAuthToken of
             PreliminaryAuthToken (Just (Right _)) -> do
+              -- in /register while logged in
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
               replaceState' (rootLink :: siteLinks) h
@@ -243,8 +265,9 @@ defaultMain
           | otherwise -> pure x
 
     sig <- IxSignal.make initSiteLink
+
+    -- handle back & forward
     flip onPopState w \(siteLink :: siteLinks) -> do
-      log $ "site link: " <> show siteLink
       let continue x = do
             setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
             IxSignal.set x sig
@@ -255,6 +278,7 @@ defaultMain
           case mAuth of
             Just _ -> continue siteLink
             Nothing -> do
+              -- in /userDetails while not logged in
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
               replaceState' (rootLink :: siteLinks) h
@@ -264,6 +288,7 @@ defaultMain
             case mAuth of
               Nothing -> continue siteLink
               Just _ -> do
+                -- in /register while logged in
                 void $ setTimeout 1000 $
                   One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
                 replaceState' (rootLink :: siteLinks) h
@@ -272,7 +297,7 @@ defaultMain
 
     pure sig
 
-  -- history driver - write to this to change the page, with history.
+  -- Global new page emitter & history driver - write to this to change the page.
   ( siteLinksSignal :: One.Queue (write :: WRITE) (Effects eff) siteLinks
     ) <- do
     q <- One.newQueue
@@ -291,6 +316,7 @@ defaultMain
             case mAuth of
               Just _ -> continue siteLink
               Nothing -> do
+                -- in /userDetails while not logged in
                 void $ setTimeout 1000 $
                   One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
                 continue rootLink
@@ -299,6 +325,7 @@ defaultMain
               case mAuth of
                 Nothing -> continue siteLink
                 Just _ -> do
+                  -- in /register while logged in
                   void $ setTimeout 1000 $
                     One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
                   continue rootLink
@@ -307,14 +334,14 @@ defaultMain
 
 
   onceRef <- newRef false
-  -- rediect for async logouts
+  -- rediect rules for async logout events
   let redirectOnAuth mAuth = do
         siteLink <- IxSignal.get currentPageSignal
         let continue = One.putQueue siteLinksSignal rootLink
         case getUserDetailsLink siteLink of
           Just _ -> case mAuth of
             Nothing -> do
-              -- hack for listening to the signal the first time on bind
+              -- hack for listening to the signal the first time on bind - first is always Nothing
               once <- do
                 x <- readRef onceRef
                 writeRef onceRef true
@@ -340,6 +367,7 @@ defaultMain
   IxSignal.subscribe localstorageOnAuth authTokenSignal
 
 
+  -- Global window size value
   windowSizeSignal <- do
     -- debounces and only relays when the window size changes
     sig <- debounce (Milliseconds 100.0) =<< windowDimensions
@@ -376,7 +404,7 @@ defaultMain
     deps
 
 
-  -- user details fetcher and oblitorator
+  -- user details fetcher and clearer
   let userDetailsOnAuth mAuth = case mAuth of
         Nothing -> IxSignal.set Nothing userDetailsSignal
         Just authToken -> do
@@ -389,18 +417,17 @@ defaultMain
                   -- TODO send full user details
 
           runAff_ resolve $ userDetails.obtain $ parallel $ do
-            mInitOut <- OneIO.callAsync userEmailQueues (UserEmailInitIn authToken)
+            mInitOut <- OneIO.callAsync userEmailQueues (AuthInitIn {token: authToken, subj: unit})
             case mInitOut of
               Nothing -> do
                 liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
                 pure Nothing
               Just initOut -> case initOut of
-                UserEmailInitOutSuccess email -> pure (Just email)
-                UserEmailInitOutNoAuth -> do
+                AuthInitOut {subj: email} -> pure (Just email)
+                AuthInitOutNoAuth -> do
                   liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
                   pure Nothing
   IxSignal.subscribe userDetailsOnAuth authTokenSignal
-  IxSignal.subscribe (\_ -> One.putQueue (One.allowWriting userDetailsLoadedQueue) unit) userEmailQueue
 
 
   -- Run User Interface

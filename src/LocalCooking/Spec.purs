@@ -208,16 +208,15 @@ spec
     performAction action props state = case action of
       ChangedCurrentPage p -> void $ T.cotransform _ { currentPage = p }
       ChangedWindowSize p -> void $ T.cotransform _ { windowSize = p }
+      GotAuthToken mToken -> void $ T.cotransform _ { authToken = mToken }
       Logout -> liftEff $ do
         One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
         void $ setTimeout 500 $
           One.putQueue errorMessageQueue $ SnackbarMessageRedirect RedirectLogout
         IxSignal.set Nothing authTokenSignal
         siteLinks rootLink
-      -- Mapping between programmatic authToken signal and UI shared state & error signaling
-      GotAuthToken mToken -> void $ T.cotransform _ { authToken = mToken }
       AttemptLogin -> do
-        mEmailPassword <- liftBase $ OneIO.callAsync dialog.loginQueue unit
+        mEmailPassword <- liftBase (OneIO.callAsync dialog.loginQueue unit)
         case mEmailPassword of
           Nothing -> pure unit
           Just {email,password} -> do
@@ -225,9 +224,8 @@ spec
             performAction (CallAuthToken initIn) props state
       CallAuthToken initIn -> do
         let onDeltaOut deltaOut = case deltaOut of
-              AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal -- TODO verify this is enough to trigger a complete remote logout
-              AuthTokenDeltaOutNew authToken' -> pure unit -- FIXME TODO actuate an updated authToken, atomically forall subscriptions
-        mInitOut <- liftBase $ callSparrowClientQueues dependencies.authTokenQueues onDeltaOut initIn
+              AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal
+        mInitOut <- liftBase (callSparrowClientQueues dependencies.authTokenQueues onDeltaOut initIn)
         liftEff $ do
           case mInitOut of
             Nothing -> do
@@ -333,7 +331,7 @@ spec
                                   }
               } $ case getUserDetailsLink state.currentPage of
                 Just mUserDetails ->
-                  -- TODO responsive design
+                  -- TODO responsive design for side-drawer navigation
                   [ R.div [RP.style {position: "relative"}]
                     [ Drawer.withStyles
                       (\_ -> {paper: createStyles {position: "relative", width: "200px", zIndex: 1000}})
