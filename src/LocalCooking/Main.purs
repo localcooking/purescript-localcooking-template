@@ -32,6 +32,7 @@ import Data.UUID (GENUUID)
 import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut (jsonParser, decodeJson, encodeJson)
+import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Aff (ParAff, Aff, runAff_, delay, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
@@ -417,7 +418,7 @@ defaultMain
                   -- TODO send full user details
 
           runAff_ resolve $ userDetails.obtain $ parallel $ do
-            mInitOut <- OneIO.callAsync userEmailQueues (AuthInitIn {token: authToken, subj: unit})
+            mInitOut <- OneIO.callAsync userEmailQueues (AuthInitIn {token: authToken, subj: JSONUnit})
             case mInitOut of
               Nothing -> do
                 liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
