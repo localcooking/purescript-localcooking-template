@@ -325,7 +325,7 @@ register
           unsafeCoerceEff $ log "Taken by register..."
           case x of
             FacebookLoginUnsavedFormDataRegister {email,emailConfirm} -> do
-              void $ setTimeout 200 $ do
+              void $ setTimeout 1000 $ do
                 unsafeCoerceEff $ log $ "sending... " <> email <> ", " <> emailConfirm
                 One.putQueue emailSetValueQueue email
                 One.putQueue emailConfirmSetValueQueue emailConfirm
