@@ -14,6 +14,7 @@ import Facebook.State (FacebookLoginUnsavedFormData (FacebookLoginUnsavedFormDat
 
 import Prelude
 import Data.Maybe (Maybe (..))
+import Data.Tuple (Tuple (..))
 import Data.Either (Either (..))
 import Data.UUID (genUUID, GENUUID)
 import Text.Email.Validate (EmailAddress)
@@ -264,9 +265,23 @@ security
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []
   where
-    emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
+    {emailSignal,emailConfirmSignal} = unsafePerformEff $ do
+      mX <- takeRef initFormDataRef
+      Tuple e1 e2 <- case mX of
+        Just x -> do
+          unsafeCoerceEff $ log "Taken by security..."
+          case x of
+            FacebookLoginUnsavedFormDataSecurity {email,emailConfirm} -> do
+              unsafeCoerceEff $ log $ "sending... " <> email <> ", " <> emailConfirm
+              pure (Tuple (Left email) (Left emailConfirm))
+            _ -> pure (Tuple (Left "") (Left ""))
+        _ -> pure (Tuple (Left "") (Left ""))
+      a <- IxSignal.make e1
+      b <- IxSignal.make e2
+      pure {emailSignal: a, emailConfirmSignal: b}
+    -- emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
+    -- emailConfirmSignal = unsafePerformEff $ IxSignal.make $ Left ""
     emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-    emailConfirmSignal = unsafePerformEff $ IxSignal.make $ Left ""
     emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordSignal = unsafePerformEff (IxSignal.make "")
     passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
@@ -299,20 +314,3 @@ security
       IxSignal.subscribe (\_ -> submitValue) emailConfirmSignal
       IxSignal.subscribe (\_ -> submitValue) passwordSignal
       IxSignal.subscribe (\_ -> submitValue) passwordConfirmSignal
-      IxQueue.onIxQueue submitQueue k \_ -> do
-        eEmail <- IxSignal.get emailSignal
-        case eEmail of
-          Left _ -> pure unit
-          Right email -> pure unit -- TODO submit user details security change
-
-      mX <- takeRef initFormDataRef
-      case mX of
-        Just x -> do
-          unsafeCoerceEff $ log "Taken by security..."
-          case x of
-            FacebookLoginUnsavedFormDataSecurity {email,emailConfirm} -> do
-              unsafeCoerceEff $ log $ "sending... " <> email <> ", " <> emailConfirm
-              IxSignal.set (Left email) emailSignal
-              IxSignal.set (Left emailConfirm) emailConfirmSignal
-            _ -> pure unit
-        _ -> pure unit
