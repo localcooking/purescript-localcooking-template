@@ -122,12 +122,11 @@ email :: forall eff
          , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
          , emailSignal   :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
          , parentSignal  :: Maybe (IxSignal (Effects eff) (Either String (Maybe EmailAddress))) --for confirm
-         , setValueQueue :: Maybe (One.Queue (write :: WRITE) (Effects eff) String)
          } -> R.ReactElement
-email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setValueQueue} =
+email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal} =
   let init =
         { initEmail: case unsafePerformEff (IxSignal.get emailSignal) of
-            Left e -> e
+            Left e -> unsafePerformEff $ e <$ log ("uhh.. " <> e)
             Right x -> case x of
               Nothing -> ""
               Just y -> Email.toString y
@@ -143,13 +142,4 @@ email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setValueQue
             , emailSignal
             , parentSignal
             } ) (initialState init)
-      reactSpec' =
-        case setValueQueue of
-          Nothing -> reactSpec
-          Just setValueQueue' ->
-            let _ = unsafePerformEff $ log "uh... obviously has a signal"
-            in  Queue.whileMountedOne
-                  (One.allowReading setValueQueue')
-                  (\this x -> unsafeCoerceEff $ dispatcher this $ GotExternalValue x)
-                  reactSpec
-  in  R.createElement (R.createClass reactSpec') unit []
+  in  R.createElement (R.createClass reactSpec) unit []

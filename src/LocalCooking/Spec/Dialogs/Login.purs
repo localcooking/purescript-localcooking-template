@@ -134,7 +134,6 @@ loginDialog
             , emailSignal: emailSignal
             , parentSignal: Nothing
             , updatedQueue: emailQueue
-            , setValueQueue: Nothing
             }
           , Password.password
             { label: R.text "Password"

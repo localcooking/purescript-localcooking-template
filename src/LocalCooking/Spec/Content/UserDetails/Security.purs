@@ -75,12 +75,10 @@ spec :: forall eff
         , email ::
           { signal        :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
-          , setValueQueue :: One.Queue (write :: WRITE) (Effects eff) String
           }
         , emailConfirm ::
           { signal        :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
-          , setValueQueue :: One.Queue (write :: WRITE) (Effects eff) String
           }
         , password ::
           { signal       :: IxSignal (Effects eff) String
@@ -164,7 +162,6 @@ spec
         , emailSignal: email.signal
         , parentSignal: Nothing
         , updatedQueue: email.updatedQueue
-        , setValueQueue: Just email.setValueQueue
         }
       , Email.email
         { label: R.text "Email Confirm"
@@ -174,7 +171,6 @@ spec
         , emailSignal: emailConfirm.signal
         , parentSignal: Just email.signal
         , updatedQueue: emailConfirm.updatedQueue
-        , setValueQueue: Just emailConfirm.setValueQueue
         }
       , Password.password
         { label: R.text "Password"
@@ -241,12 +237,10 @@ security
             , email:
               { signal: emailSignal
               , updatedQueue: emailUpdatedQueue
-              , setValueQueue: emailSetValueQueue
               }
             , emailConfirm:
               { signal: emailConfirmSignal
               , updatedQueue: emailConfirmUpdatedQueue
-              , setValueQueue: emailConfirmSetValueQueue
               }
             , password:
               { signal: passwordSignal
@@ -272,10 +266,8 @@ security
   where
     emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
     emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-    emailSetValueQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
     emailConfirmSignal = unsafePerformEff $ IxSignal.make $ Left ""
     emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-    emailConfirmSetValueQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
     passwordSignal = unsafePerformEff (IxSignal.make "")
     passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordConfirmSignal = unsafePerformEff (IxSignal.make "")
@@ -319,7 +311,8 @@ security
           unsafeCoerceEff $ log "Taken by security..."
           case x of
             FacebookLoginUnsavedFormDataSecurity {email,emailConfirm} -> do
-              One.putQueue emailSetValueQueue email
-              One.putQueue emailConfirmSetValueQueue emailConfirm
+              unsafeCoerceEff $ log $ "sending... " <> email <> ", " <> emailConfirm
+              IxSignal.set (Left email) emailSignal
+              IxSignal.set (Left emailConfirm) emailConfirmSignal
             _ -> pure unit
         _ -> pure unit
