@@ -62,13 +62,18 @@ import IxQueue (IxQueue)
 import IxQueue as IxQueue
 
 
-type State = Unit
+type State =
+  { rerender :: Unit
+  }
 
 initialState :: State
-initialState = unit
+initialState =
+  { rerender: unit
+  }
 
 data Action
   = SubmitRegister
+  | ReRender
 
 
 type Effects eff =
@@ -128,6 +133,7 @@ spec
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
+      ReRender -> void $ T.cotransform _ {rerender = unit}
       SubmitRegister -> do
         liftEff $ IxSignal.set true pendingSignal
         mEmail <- liftEff $ IxSignal.get email.signal
@@ -333,11 +339,49 @@ register
             , reCaptchaSignal
             , pendingSignal
             } ) initialState
+      submitValue this = do
+        mEmail <- IxSignal.get emailSignal
+        confirm <- IxSignal.get emailConfirmSignal
+        x <- case mEmail of
+          Email.EmailGood _ -> do
+            p1 <- IxSignal.get passwordSignal
+            if p1 == ""
+              then pure true
+              else do
+                p2 <- IxSignal.get passwordConfirmSignal
+                pure (mEmail /= confirm || p1 /= p2)
+          _ -> pure true
+        IxSignal.set x submitDisabledSignal
+        unsafeCoerceEff $ dispatcher this ReRender
       reactSpec' =
-        Queue.whileMountedIxUUID
-          submitQueue
-          (\this _ -> unsafeCoerceEff $ dispatcher this SubmitRegister)
-          reactSpec
+          Queue.whileMountedIxUUID
+            submitQueue
+            (\this _ -> unsafeCoerceEff $ dispatcher this SubmitRegister)
+        $ Queue.whileMountedIxUUID
+            emailUpdatedQueue
+            (\this _ -> submitValue this)
+        $ Queue.whileMountedIxUUID
+            emailConfirmUpdatedQueue
+            (\this _ -> submitValue this)
+        $ Queue.whileMountedIxUUID
+            passwordUpdatedQueue
+            (\this _ -> submitValue this)
+        $ Queue.whileMountedIxUUID
+            passwordConfirmUpdatedQueue
+            (\this _ -> submitValue this)
+        -- $ Signal.whileMountedIxUUID
+        --     emailSignal
+        --     (\this _ -> submitValue this)
+        -- $ Signal.whileMountedIxUUID
+        --     emailConfirmSignal
+        --     (\this _ -> submitValue this)
+        -- $ Signal.whileMountedIxUUID
+        --     passwordSignal
+        --     (\this _ -> submitValue this)
+        -- $ Signal.whileMountedIxUUID
+        --     passwordConfirmSignal
+        --     (\this _ -> submitValue this)
+            reactSpec
   in  R.createElement (R.createClass reactSpec') unit []
   where
     {emailSignal,emailConfirmSignal} = unsafePerformEff $ do
@@ -363,27 +407,3 @@ register
     pendingSignal = unsafePerformEff (IxSignal.make false)
     submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     submitDisabledSignal = unsafePerformEff (IxSignal.make true)
-
-    _ = unsafePerformEff $ do
-      k <- show <$> genUUID
-      let submitValue = do
-            mEmail <- IxSignal.get emailSignal
-            confirm <- IxSignal.get emailConfirmSignal
-            x <- case mEmail of
-              Email.EmailGood _ -> do
-                p1 <- IxSignal.get passwordSignal
-                if p1 == ""
-                  then pure true
-                  else do
-                    p2 <- IxSignal.get passwordConfirmSignal
-                    pure (mEmail /= confirm || p1 /= p2)
-              _ -> pure true
-            IxSignal.set x submitDisabledSignal
-      IxQueue.onIxQueue emailUpdatedQueue k \_ -> submitValue
-      IxQueue.onIxQueue emailConfirmUpdatedQueue k \_ -> submitValue
-      IxQueue.onIxQueue passwordUpdatedQueue k \_ -> submitValue
-      IxQueue.onIxQueue passwordConfirmUpdatedQueue k \_ -> submitValue
-      IxSignal.subscribe (\_ -> submitValue) emailSignal
-      IxSignal.subscribe (\_ -> submitValue) emailConfirmSignal
-      IxSignal.subscribe (\_ -> submitValue) passwordSignal
-      IxSignal.subscribe (\_ -> submitValue) passwordConfirmSignal
