@@ -1,6 +1,7 @@
 module Facebook.State where
 
 import LocalCooking.Links.Class (class ToLocation, class FromLocation, toLocation, fromLocation)
+import Facebook.Types (FacebookUserId)
 
 import Prelude
 import Data.Maybe (Maybe)
@@ -54,6 +55,7 @@ data FacebookLoginUnsavedFormData
   = FacebookLoginUnsavedFormDataRegister
     { email :: String
     , emailConfirm :: String
+    , fbUserId :: Maybe FacebookUserId
     }
   | FacebookLoginUnsavedFormDataSecurity
     { email :: String
@@ -69,7 +71,8 @@ instance arbitraryFacebookLoginUnsavedFormData :: Arbitrary FacebookLoginUnsaved
   arbitrary = oneOf $ NonEmpty
     ( do email <- arbitrary
          emailConfirm <- arbitrary
-         pure $ FacebookLoginUnsavedFormDataRegister {email,emailConfirm}
+         fbUserId <- arbitrary
+         pure $ FacebookLoginUnsavedFormDataRegister {email,emailConfirm,fbUserId}
     )
     [ do email <- arbitrary
          emailConfirm <- arbitrary
@@ -78,10 +81,11 @@ instance arbitraryFacebookLoginUnsavedFormData :: Arbitrary FacebookLoginUnsaved
 
 instance encodeJsonFacebookLoginUnsavedFormData :: EncodeJson FacebookLoginUnsavedFormData where
   encodeJson x = case x of
-    FacebookLoginUnsavedFormDataRegister {email,emailConfirm}
+    FacebookLoginUnsavedFormDataRegister {email,emailConfirm,fbUserId}
       -> "register" :=
          ( "email" := email
          ~> "emailConfirm" := emailConfirm
+         ~> "fbUserId" := fbUserId
          ~> jsonEmptyObject )
       ~> jsonEmptyObject
     FacebookLoginUnsavedFormDataSecurity {email,emailConfirm}
@@ -98,7 +102,8 @@ instance decodeJsonFacebookLoginUnsavedFormData :: DecodeJson FacebookLoginUnsav
           o' <- o .? "register"
           email <- o' .? "email"
           emailConfirm <- o' .? "emailConfirm"
-          pure (FacebookLoginUnsavedFormDataRegister {email,emailConfirm})
+          fbUserId <- o' .? "fbUserId"
+          pure (FacebookLoginUnsavedFormDataRegister {email,emailConfirm,fbUserId})
         security = do
           o' <- o .? "security"
           email <- o' .? "email"

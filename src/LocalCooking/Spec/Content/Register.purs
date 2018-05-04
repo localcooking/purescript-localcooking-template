@@ -14,9 +14,10 @@ import LocalCooking.Common.Password (hashPassword)
 import Google.ReCaptcha (ReCaptchaResponse)
 import Facebook.Call (FacebookLoginLink (..), facebookLoginLinkToURI)
 import Facebook.State (FacebookLoginState (..), FacebookLoginUnsavedFormData (FacebookLoginUnsavedFormDataRegister))
+import Facebook.Types (FacebookUserId)
 
 import Prelude
-import Data.Maybe (Maybe (..))
+import Data.Maybe (Maybe (..), isJust)
 import Data.Tuple (Tuple (..))
 import Data.Either (Either (..))
 import Data.UUID (genUUID, GENUUID)
@@ -64,11 +65,13 @@ import IxQueue as IxQueue
 
 type State =
   { rerender :: Unit
+  , fbUserId :: Maybe FacebookUserId
   }
 
-initialState :: State
-initialState =
+initialState :: {initFbUserId :: Maybe FacebookUserId} -> State
+initialState {initFbUserId} =
   { rerender: unit
+  , fbUserId: initFbUserId
   }
 
 data Action
@@ -222,7 +225,7 @@ spec
             , errorQueue: passwordConfirmErrorQueue
             }
           , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em", paddingBottom: "2em"}] $
-              let mkFab mainColor darkColor icon mLink =
+              let mkFab mainColor darkColor icon disabled mLink =
                     Button.withStyles
                       (\theme ->
                         { root: createStyles
@@ -238,13 +241,13 @@ spec
                           , classes: Button.createClasses {root: classes.root}
                           , disabled: case mLink of
                             Nothing -> true
-                            _ -> false
+                            _ -> disabled
                           , href: case mLink of
                             Nothing -> ""
                             Just link -> URI.print (facebookLoginLinkToURI env link)
                           } [icon]
                       )
-              in  [ mkFab "#3b5998" "#1e3f82" facebookIcon $
+              in  [ mkFab "#3b5998" "#1e3f82" facebookIcon (isJust state.fbUserId) $
                       Just $ FacebookLoginLink
                       { redirectURL: toURI (toLocation FacebookLoginReturn)
                       , state: FacebookLoginState
@@ -258,11 +261,12 @@ spec
                               Email.EmailPartial e -> e
                               Email.EmailBad e -> e
                               Email.EmailGood e -> Email.toString e
+                          , fbUserId: Nothing
                           }
                         }
                       }
-                  , mkFab "#1da1f3" "#0f8cdb" twitterIcon Nothing
-                  , mkFab "#dd4e40" "#c13627" googleIcon Nothing
+                  , mkFab "#1da1f3" "#0f8cdb" twitterIcon true Nothing
+                  , mkFab "#dd4e40" "#c13627" googleIcon true Nothing
                   ]
           , reCaptcha
             { reCaptchaSignal
@@ -338,7 +342,7 @@ register
               }
             , reCaptchaSignal
             , pendingSignal
-            } ) initialState
+            } ) (initialState {initFbUserId: fbUserId})
       submitValue this = do
         mEmail <- IxSignal.get emailSignal
         confirm <- IxSignal.get emailConfirmSignal
@@ -384,19 +388,28 @@ register
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []
   where
-    {emailSignal,emailConfirmSignal} = unsafePerformEff $ do
+    {emailSignal,emailConfirmSignal,fbUserId} = unsafePerformEff $ do
       mX <- takeRef initFormDataRef
-      Tuple e1 e2 <- case mX of
-        Just x -> do
-          unsafeCoerceEff $ log "Taken by register..."
-          case x of
-            FacebookLoginUnsavedFormDataRegister {email,emailConfirm} -> do
-              pure (Tuple (Email.EmailPartial email) (Email.EmailPartial emailConfirm))
-            _ -> pure (Tuple (Email.EmailPartial "") (Email.EmailPartial ""))
-        _ -> pure (Tuple (Email.EmailPartial "") (Email.EmailPartial ""))
-      a <- IxSignal.make e1
-      b <- IxSignal.make e2
-      pure {emailSignal: a, emailConfirmSignal: b}
+      let {email,emailConfirm,fbUserId:fbUserId'} = case mX of
+            Just x -> case x of
+              FacebookLoginUnsavedFormDataRegister {email,emailConfirm,fbUserId} -> do
+                { email: Email.EmailPartial email
+                , emailConfirm: Email.EmailPartial emailConfirm
+                , fbUserId
+                }
+              _ ->
+                { email: Email.EmailPartial ""
+                , emailConfirm: Email.EmailPartial ""
+                , fbUserId: Nothing
+                }
+            _ ->
+              { email: Email.EmailPartial ""
+              , emailConfirm: Email.EmailPartial ""
+              , fbUserId: Nothing
+              }
+      a <- IxSignal.make email
+      b <- IxSignal.make emailConfirm
+      pure {emailSignal: a, emailConfirmSignal: b,fbUserId:fbUserId'}
     emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordSignal = unsafePerformEff (IxSignal.make "")
