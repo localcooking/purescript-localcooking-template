@@ -60,7 +60,7 @@ defaultSiteLinksPathParser userDetailsLinksParser = do
         pure registerLink
       userDetails = do
         void (string "userDetails")
-        mUserDetails <- optionMaybe (divider *> userDetailsLinksParser)
+        mUserDetails <- optionMaybe userDetailsLinksParser
         pure (userDetailsLink mUserDetails)
   try register
     <|> try userDetails
