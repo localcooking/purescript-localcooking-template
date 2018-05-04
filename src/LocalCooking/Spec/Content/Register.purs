@@ -409,6 +409,7 @@ register
               }
       a <- IxSignal.make email
       b <- IxSignal.make emailConfirm
+      unsafeCoerceEff $ log $ "From register: " <> show fbUserId'
       pure {emailSignal: a, emailConfirmSignal: b,fbUserId:fbUserId'}
     emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue

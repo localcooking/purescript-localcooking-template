@@ -13,6 +13,7 @@ newtype FacebookUserId = FacebookUserId String
 
 derive instance genericFacebookUserId :: Generic FacebookUserId
 derive newtype instance eqFacebookUserId :: Eq FacebookUserId
+derive newtype instance showFacebookUserId :: Show FacebookUserId
 derive newtype instance encodeJsonFacebookUserId :: EncodeJson FacebookUserId
 derive newtype instance decodeJsonFacebookUserId :: DecodeJson FacebookUserId
 derive newtype instance arbitraryFacebookUserId :: Arbitrary FacebookUserId
