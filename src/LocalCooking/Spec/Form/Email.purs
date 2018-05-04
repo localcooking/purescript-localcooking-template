@@ -3,6 +3,7 @@ module LocalCooking.Spec.Form.Email where
 import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
+import Data.Generic (class Generic, gEq)
 import Text.Email.Validate (EmailAddress, emailAddress)
 import Text.Email.Validate as Email
 import Control.Monad.Eff.Ref (REF)
@@ -44,16 +45,26 @@ data Action
   = ChangedEmail String
   | EmailUnfocused
   | ReRender
-  | GotExternalValue String
 
 type Effects eff =
   ( ref :: REF
   | eff)
 
 
+data EmailState
+  = EmailPartial String
+  | EmailBad String
+  | EmailGood EmailAddress
+
+derive instance genericEmailState :: Generic EmailState
+
+instance eqEmailState :: Eq EmailState where
+  eq = gEq
+
+
 spec :: forall eff
-      . { emailSignal  :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
-        , parentSignal :: Maybe (IxSignal (Effects eff) (Either String (Maybe EmailAddress)))
+      . { emailSignal  :: IxSignal (Effects eff) EmailState
+        , parentSignal :: Maybe (IxSignal (Effects eff) EmailState)
         , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
         , label        :: R.ReactElement
         , fullWidth    :: Boolean
@@ -72,21 +83,15 @@ spec
   where
     performAction action props state = case action of
       ChangedEmail e -> do
-        liftEff $ IxSignal.set (Left e) emailSignal
+        liftEff $ IxSignal.set (EmailPartial e) emailSignal
         void $ T.cotransform _ { email = e }
       EmailUnfocused -> do
         liftEff $ case emailAddress state.email of
-          Nothing -> IxSignal.set (Right Nothing) emailSignal
-          Just e -> IxSignal.set (Right (Just e)) emailSignal
+          Nothing -> IxSignal.set (EmailBad state.email) emailSignal
+          Just e -> IxSignal.set (EmailGood e) emailSignal
         performAction ReRender props state
         liftEff $ IxQueue.broadcastIxQueue (IxQueue.allowWriting updatedQueue) unit
       ReRender -> void $ T.cotransform _ { rerender = unit }
-      GotExternalValue x -> do
-        liftEff $ unsafeCoerceEff $ log $ "Got value: " <> x
-        void $ T.cotransform _ { email = x }
-        liftEff $ IxSignal.set (Left x) emailSignal
-        performAction ReRender props state
-        liftEff $ IxQueue.broadcastIxQueue (IxQueue.allowWriting updatedQueue) unit
 
     render :: T.Render State Unit Action
     render dispatch props state children =
@@ -97,16 +102,14 @@ spec
         , onChange: mkEffFn1 \e -> dispatch $ ChangedEmail (unsafeCoerce e).target.value
         , onBlur: mkEffFn1 \_ -> dispatch EmailUnfocused
         , error: case unsafePerformEff (IxSignal.get emailSignal) of
-          Left _ -> false
-          Right mEmail -> case mEmail of
-            Nothing -> true
-            Just e -> case parentSignal of
-              Nothing -> false
-              Just parentSignal' -> case unsafePerformEff (IxSignal.get parentSignal') of
-                Left _ -> true
-                Right mEmailParent -> case mEmailParent of
-                  Nothing -> true
-                  Just e2 -> e /= e2
+          EmailPartial _ -> false
+          EmailBad _ -> true
+          EmailGood e -> case parentSignal of
+            Nothing -> false
+            Just parentSignal' -> case unsafePerformEff (IxSignal.get parentSignal') of
+              EmailPartial _ -> true
+              EmailBad _ -> true
+              EmailGood e2 -> e /= e2
         , name
         , id
         } []
@@ -120,16 +123,15 @@ email :: forall eff
          , name          :: String
          , id            :: String
          , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
-         , emailSignal   :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
-         , parentSignal  :: Maybe (IxSignal (Effects eff) (Either String (Maybe EmailAddress))) --for confirm
+         , emailSignal   :: IxSignal (Effects eff) EmailState
+         , parentSignal  :: Maybe (IxSignal (Effects eff) EmailState) --for confirm
          } -> R.ReactElement
 email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal} =
   let init =
         { initEmail: case unsafePerformEff (IxSignal.get emailSignal) of
-            Left e -> e
-            Right x -> case x of
-              Nothing -> ""
-              Just y -> Email.toString y
+            EmailPartial e -> e
+            EmailBad e -> e
+            EmailGood y -> Email.toString y
         }
       {spec: reactSpec, dispatcher} =
         T.createReactSpec

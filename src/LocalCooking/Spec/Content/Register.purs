@@ -24,6 +24,7 @@ import Data.URI (URI)
 import Data.URI.URI (print) as URI
 import Data.URI.Location (Location)
 import Text.Email.Validate (EmailAddress)
+import Text.Email.Validate as Email
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class (liftEff)
@@ -88,11 +89,11 @@ spec :: forall eff siteLinks
         , toURI             :: Location -> URI
         , currentPageSignal :: IxSignal (Effects eff) siteLinks
         , email ::
-          { signal        :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+          { signal        :: IxSignal (Effects eff) Email.EmailState
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
           }
         , emailConfirm ::
-          { signal        :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+          { signal        :: IxSignal (Effects eff) Email.EmailState
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
           }
         , password ::
@@ -131,7 +132,7 @@ spec
         liftEff $ IxSignal.set true pendingSignal
         mEmail <- liftEff $ IxSignal.get email.signal
         case mEmail of
-          Right (Just email) -> do
+          Email.EmailGood email -> do
             mReCaptcha <- liftEff $ IxSignal.get reCaptchaSignal
             case mReCaptcha of
               Just reCaptcha -> do
@@ -214,7 +215,7 @@ spec
             , updatedQueue: passwordConfirm.updatedQueue
             , errorQueue: passwordConfirmErrorQueue
             }
-          , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em"}] $
+          , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em", paddingBottom: "2em"}] $
               let mkFab mainColor darkColor icon mLink =
                     Button.withStyles
                       (\theme ->
@@ -242,6 +243,16 @@ spec
                       { redirectURL: toURI (toLocation FacebookLoginReturn)
                       , state: FacebookLoginState
                         { origin: unsafePerformEff (IxSignal.get currentPageSignal)
+                        , formData: Just $ FacebookLoginUnsavedFormDataRegister
+                          { email: case unsafePerformEff (IxSignal.get email.signal) of
+                              Email.EmailPartial e -> e
+                              Email.EmailBad e -> e
+                              Email.EmailGood e -> Email.toString e
+                          , emailConfirm: case unsafePerformEff (IxSignal.get emailConfirm.signal) of
+                              Email.EmailPartial e -> e
+                              Email.EmailBad e -> e
+                              Email.EmailGood e -> Email.toString e
+                          }
                         }
                       }
                   , mkFab "#1da1f3" "#0f8cdb" twitterIcon Nothing
@@ -336,9 +347,9 @@ register
           unsafeCoerceEff $ log "Taken by register..."
           case x of
             FacebookLoginUnsavedFormDataRegister {email,emailConfirm} -> do
-              pure (Tuple (Left email) (Left emailConfirm))
-            _ -> pure (Tuple (Left "") (Left ""))
-        _ -> pure (Tuple (Left "") (Left ""))
+              pure (Tuple (Email.EmailPartial email) (Email.EmailPartial emailConfirm))
+            _ -> pure (Tuple (Email.EmailPartial "") (Email.EmailPartial ""))
+        _ -> pure (Tuple (Email.EmailPartial "") (Email.EmailPartial ""))
       a <- IxSignal.make e1
       b <- IxSignal.make e2
       pure {emailSignal: a, emailConfirmSignal: b}
@@ -359,7 +370,7 @@ register
             mEmail <- IxSignal.get emailSignal
             confirm <- IxSignal.get emailConfirmSignal
             x <- case mEmail of
-              Right (Just _) -> do
+              Email.EmailGood _ -> do
                 p1 <- IxSignal.get passwordSignal
                 if p1 == ""
                   then pure true

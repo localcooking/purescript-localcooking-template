@@ -74,11 +74,11 @@ spec :: forall eff
         , authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
         , authTokenSignal         :: IxSignal (Effects eff) (Maybe AuthToken)
         , email ::
-          { signal        :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+          { signal        :: IxSignal (Effects eff) Email.EmailState
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
           }
         , emailConfirm ::
-          { signal        :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
+          { signal        :: IxSignal (Effects eff) Email.EmailState
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
           }
         , password ::
@@ -117,7 +117,7 @@ spec
           Just authToken -> do
             mEmail <- liftEff $ IxSignal.get email.signal
             case mEmail of
-              Right (Just email) -> do
+              Email.EmailGood email -> do
                 mAuthPass <- liftBase $ OneIO.callAsync authenticateDialogQueue unit
                 case mAuthPass of
                   Nothing -> pure unit
@@ -273,9 +273,9 @@ security
           case x of
             FacebookLoginUnsavedFormDataSecurity {email,emailConfirm} -> do
               unsafeCoerceEff $ log $ "sending... " <> email <> ", " <> emailConfirm
-              pure (Tuple (Left email) (Left emailConfirm))
-            _ -> pure (Tuple (Left "") (Left ""))
-        _ -> pure (Tuple (Left "") (Left ""))
+              pure (Tuple (Email.EmailPartial email) (Email.EmailPartial emailConfirm))
+            _ -> pure (Tuple (Email.EmailPartial "") (Email.EmailPartial ""))
+        _ -> pure (Tuple (Email.EmailPartial "") (Email.EmailPartial ""))
       a <- IxSignal.make e1
       b <- IxSignal.make e2
       pure {emailSignal: a, emailConfirmSignal: b}
@@ -295,7 +295,7 @@ security
             mEmail <- IxSignal.get emailSignal
             confirm <- IxSignal.get emailConfirmSignal
             x <- case mEmail of
-              Right (Just _) -> do
+              Email.EmailGood _ -> do
                 p1 <- IxSignal.get passwordSignal
                 if p1 == ""
                   then pure true

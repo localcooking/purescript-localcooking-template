@@ -117,7 +117,7 @@ loginDialog
             let submitValue = do
                   mEmail <- IxSignal.get emailSignal
                   x <- case mEmail of
-                    Right (Just _) -> do
+                    Email.EmailGood _ -> do
                       p1 <- IxSignal.get passwordSignal
                       pure (p1 == "")
                     _ -> pure true
@@ -173,6 +173,7 @@ loginDialog
                       { redirectURL: toURI (toLocation FacebookLoginReturn)
                       , state: FacebookLoginState
                         { origin: unsafePerformEff (IxSignal.get currentPageSignal)
+                        , formData: Nothing
                         }
                       }
                   , mkFab "#1da1f3" "#0f8cdb" twitterIcon Nothing
@@ -182,7 +183,7 @@ loginDialog
     , obtain: do
       mEmail <- liftEff (IxSignal.get emailSignal)
       case mEmail of
-        Right (Just email) -> do
+        Email.EmailGood email -> do
           pw <- liftEff (IxSignal.get passwordSignal)
           hashedPassword <- liftBase (hashPassword {salt: env.salt, password: pw})
           mVerify <- OneIO.callAsync
@@ -203,12 +204,12 @@ loginDialog
           liftEff $ log "bad email!" -- FIXME bug out somehow?
           pure Nothing
     , reset: do
-      IxSignal.set (Left "") emailSignal
+      IxSignal.set (Email.EmailPartial "") emailSignal
       IxSignal.set "" passwordSignal
     }
   }
   where
-    emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
+    emailSignal = unsafePerformEff $ IxSignal.make $ Email.EmailPartial ""
     passwordSignal = unsafePerformEff $ IxSignal.make ""
     emailQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
