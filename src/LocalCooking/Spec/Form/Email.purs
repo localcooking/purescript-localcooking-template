@@ -147,8 +147,9 @@ email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setValueQue
         case setValueQueue of
           Nothing -> reactSpec
           Just setValueQueue' ->
-            Queue.whileMountedOne
-              (One.allowReading setValueQueue')
-              (\this x -> unsafeCoerceEff $ dispatcher this $ GotExternalValue x)
-              reactSpec
+            let _ = unsafePerformEff $ log "uh... obviously has a signal"
+            in  Queue.whileMountedOne
+                  (One.allowReading setValueQueue')
+                  (\this x -> unsafeCoerceEff $ dispatcher this $ GotExternalValue x)
+                  reactSpec
   in  R.createElement (R.createClass reactSpec') unit []
