@@ -200,6 +200,7 @@ defaultMain
       PreliminaryAuthToken Nothing -> map Right <$> getStoredAuthToken
       PreliminaryAuthToken (Just eErrX) -> pure (Just eErrX)
 
+  log $ "Form data: " <> show env.formData
   ( initFormDataRef :: Ref (Maybe FacebookLoginUnsavedFormData)
     ) <- newRef env.formData
 

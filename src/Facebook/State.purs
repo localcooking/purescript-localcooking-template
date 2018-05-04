@@ -6,7 +6,7 @@ import Prelude
 import Data.Either (Either (..))
 import Data.URI.Location (parseLocation, printLocation)
 import Data.Argonaut (class EncodeJson, class DecodeJson, decodeJson, (:=), (~>), jsonEmptyObject, (.?), fail)
-import Data.Generic (class Generic, gEq)
+import Data.Generic (class Generic, gEq, gShow)
 import Control.Alternative ((<|>))
 import Text.Parsing.StringParser (runParser)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -52,6 +52,11 @@ data FacebookLoginUnsavedFormData
     { email :: String
     , emailConfirm :: String
     }
+
+derive instance genericFacebookLoginUnsavedFormData :: Generic FacebookLoginUnsavedFormData
+
+instance showFacebookLoginUnsavedFormData :: Show FacebookLoginUnsavedFormData where
+  show = gShow
 
 instance encodeJsonFacebookLoginUnsavedFormData :: EncodeJson FacebookLoginUnsavedFormData where
   encodeJson x = case x of
