@@ -84,6 +84,7 @@ spec
         , fullWidth
         , onChange: mkEffFn1 \e -> dispatch $ ChangedPassword (unsafeCoerce e).target.value
         , onBlur: mkEffFn1 \_ -> dispatch PasswordUnfocused
+        , value: Input.valueString state.password
         , "type": Input.passwordType
         , error:
           let p = unsafePerformEff (IxSignal.get passwordSignal)

@@ -16,6 +16,7 @@ import React.DOM as R
 import React.Queue.WhileMounted as Queue
 
 import MaterialUI.TextField (textField)
+import MaterialUI.Input as Input
 
 import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
@@ -47,6 +48,7 @@ data Action
 type Effects eff =
   ( ref :: REF
   | eff)
+
 
 spec :: forall eff
       . { emailSignal  :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
@@ -89,6 +91,7 @@ spec
       [ textField
         { label
         , fullWidth
+        , value: Input.valueString state.email
         , onChange: mkEffFn1 \e -> dispatch $ ChangedEmail (unsafeCoerce e).target.value
         , onBlur: mkEffFn1 \_ -> dispatch EmailUnfocused
         , error: case unsafePerformEff (IxSignal.get emailSignal) of
