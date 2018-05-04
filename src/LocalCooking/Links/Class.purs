@@ -16,6 +16,7 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (EXCEPTION, throw)
 import Control.Monad.Eff.Uncurried (mkEffFn1, runEffFn2)
+import Control.Monad.Eff.Unsafe (unsafeCoerceEff)
 import DOM (DOM)
 import DOM.HTML.History (DocumentTitle (..), pushState, replaceState, URL (..))
 import DOM.HTML.Window.Extra (onPopStateImpl)
@@ -105,9 +106,11 @@ pushState' x h = do
 replaceState' :: forall eff siteLinks userDetailsLinks
                . ToLocation siteLinks
               => Eq siteLinks
+              => Show siteLinks
               => LocalCookingSiteLinks siteLinks userDetailsLinks
               => siteLinks -> History -> Eff (history :: HISTORY | eff) Unit
 replaceState' x h = do
+  unsafeCoerceEff $ log $ "Replacing state... " <> show x
   replaceState
     (toForeign $ encodeJson $ printLocation $ toLocation x)
     (defaultSiteLinksToDocumentTitle x)
