@@ -9,6 +9,7 @@ import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
+import Control.Monad.Eff.Console (log)
 
 import Thermite as T
 import React as R
@@ -81,6 +82,7 @@ spec
         liftEff $ IxQueue.broadcastIxQueue (IxQueue.allowWriting updatedQueue) unit
       ReRender -> void $ T.cotransform _ { rerender = unit }
       GotExternalValue x -> do
+        liftEff $ unsafeCoerceEff $ log $ "Got value: " <> x
         void $ T.cotransform _ { email = x }
         liftEff $ IxSignal.set (Left x) emailSignal
         performAction ReRender props state
@@ -125,8 +127,10 @@ email :: forall eff
 email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setValueQueue} =
   let init =
         { initEmail: case unsafePerformEff (IxSignal.get emailSignal) of
-             Left e -> e
-             _ -> ""
+            Left e -> e
+            Right x -> case x of
+              Nothing -> ""
+              Just y -> Email.toString y
         }
       {spec: reactSpec, dispatcher} =
         T.createReactSpec
