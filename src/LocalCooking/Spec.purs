@@ -36,7 +36,7 @@ import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Console (CONSOLE)
+import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
@@ -208,9 +208,15 @@ spec
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
-      ChangedCurrentPage p -> void $ T.cotransform _ { currentPage = p }
-      ChangedWindowSize p -> void $ T.cotransform _ { windowSize = p }
-      GotAuthToken mToken -> void $ T.cotransform _ { authToken = mToken }
+      ChangedCurrentPage p -> do
+        liftEff $ log "caused by currentPage"
+        void $ T.cotransform _ { currentPage = p }
+      ChangedWindowSize p -> do
+        liftEff $ log "caused by windowSize"
+        void $ T.cotransform _ { windowSize = p }
+      GotAuthToken mToken -> do
+        liftEff $ log "caused by authToken"
+        void $ T.cotransform _ { authToken = mToken }
       Logout -> liftEff $ do
         One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
         void $ setTimeout 500 $
