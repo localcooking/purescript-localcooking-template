@@ -1,7 +1,7 @@
 module LocalCooking.Types.Env where
 
 import LocalCooking.Common.Password (HashedPassword)
-import LocalCooking.Auth.Error (PreliminaryAuthToken)
+import LocalCooking.Client.Dependencies.AuthToken (PreliminaryAuthToken)
 import Facebook.State (FacebookLoginUnsavedFormData)
 
 import Data.Maybe (Maybe)

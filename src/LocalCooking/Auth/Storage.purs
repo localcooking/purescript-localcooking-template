@@ -33,3 +33,4 @@ storeAuthToken authToken =
 clearAuthToken :: forall eff. Eff (webStorage :: WEB_STORAGE | eff) Unit
 clearAuthToken =
   removeItem localStorage authTokenKey
+

@@ -13,13 +13,12 @@ import LocalCooking.Spec.Flags.Colorado (coloradoFlag, coloradoFlagViewBox)
 import LocalCooking.Window (WindowSize (Laptop))
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Links.Class (registerLink, rootLink, userDetailsLink, getUserDetailsLink, userDetailsGeneralLink, userDetailsSecurityLink, class LocalCookingSiteLinks, class ToLocation)
-import LocalCooking.Auth.Error (AuthError (AuthExistsFailure), PreliminaryAuthToken (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.Password (HashedPassword)
 import LocalCooking.Client.Dependencies.AuthToken
   ( AuthTokenSparrowClientQueues
   , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenDeltaOut (..)
-  )
+  , AuthTokenFailure (AuthExistsFailure), PreliminaryAuthToken (..))
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
@@ -233,7 +232,7 @@ spec
           case mInitOut of
             Nothing -> do
               IxSignal.set Nothing authTokenSignal
-              One.putQueue errorMessageQueue (SnackbarMessageAuthError AuthExistsFailure)
+              One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthExistsFailure)
             Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
               AuthTokenInitOutSuccess authToken -> do
                 IxSignal.set (Just authToken) authTokenSignal
@@ -613,7 +612,7 @@ app
                 unsafeCoerceEff $ dispatcher this $ CallAuthToken $
                   AuthTokenInitInExists {exists: prescribedAuthToken}
               Left e ->
-                unsafeCoerceEff $ One.putQueue errorMessageQueue $ SnackbarMessageAuthError e
+                unsafeCoerceEff $ One.putQueue errorMessageQueue $ SnackbarMessageAuthFailure e
           reactSpec.componentWillMount this
         }
 

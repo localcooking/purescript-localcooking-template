@@ -5,15 +5,14 @@ import LocalCooking.Spec.Form.Email as Email
 import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..))
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Auth.Error (AuthError (AuthExistsFailure))
 import LocalCooking.Window (WindowSize)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues, PasswordVerifyInitIn (PasswordVerifyInitInUnauth), PasswordVerifyInitOut (PasswordVerifyInitOutSuccess))
-import LocalCooking.Client.Dependencies.AuthToken (AuthTokenFailure (BadPassword))
+import LocalCooking.Client.Dependencies.AuthToken (LoginFailure (BadPassword), AuthTokenFailure (AuthExistsFailure, AuthTokenLoginFailure))
 import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
 import LocalCooking.Links.Class (registerLink, toLocation, class LocalCookingSiteLinks, class ToLocation)
+import LocalCooking.Common.Password (HashedPassword, hashPassword)
 import Facebook.Call (FacebookLoginLink (..), facebookLoginLinkToURI)
 import Facebook.State (FacebookLoginState (..))
-import LocalCooking.Common.Password (HashedPassword, hashPassword)
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -195,9 +194,9 @@ loginDialog
             _ -> do
               liftEff $ case mVerify of
                 Nothing ->
-                  One.putQueue errorMessageQueue (SnackbarMessageAuthError AuthExistsFailure)
+                  One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthExistsFailure)
                 _ ->
-                  One.putQueue errorMessageQueue (SnackbarMessageAuthFailure BadPassword)
+                  One.putQueue errorMessageQueue $ SnackbarMessageAuthFailure $ AuthTokenLoginFailure BadPassword
               liftEff $ One.putQueue passwordErrorQueue unit
               pure Nothing
         _ -> do

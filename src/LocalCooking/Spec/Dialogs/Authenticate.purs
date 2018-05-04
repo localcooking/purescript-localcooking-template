@@ -9,8 +9,7 @@ import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Common.Password (HashedPassword, hashPassword)
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues, PasswordVerifyInitIn (PasswordVerifyInitInAuth), PasswordVerifyInitOut (PasswordVerifyInitOutSuccess))
-import LocalCooking.Client.Dependencies.AuthToken (AuthTokenFailure (BadPassword))
-import LocalCooking.Auth.Error (AuthError (AuthExistsFailure))
+import LocalCooking.Client.Dependencies.AuthToken (LoginFailure (BadPassword), AuthTokenFailure (AuthExistsFailure, AuthTokenLoginFailure))
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -119,9 +118,9 @@ authenticateDialog
             _ -> do
               liftEff $ case mVerify of
                 Nothing ->
-                  One.putQueue errorMessageQueue (SnackbarMessageAuthError AuthExistsFailure)
+                  One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthExistsFailure)
                 _ ->
-                  One.putQueue errorMessageQueue (SnackbarMessageAuthFailure BadPassword)
+                  One.putQueue errorMessageQueue $ SnackbarMessageAuthFailure $ AuthTokenLoginFailure BadPassword
               liftEff (One.putQueue passwordErrorQueue unit)
               pure Nothing
     , reset: do

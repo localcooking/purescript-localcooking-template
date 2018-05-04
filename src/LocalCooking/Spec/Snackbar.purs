@@ -1,7 +1,7 @@
 module LocalCooking.Spec.Snackbar where
 
-import LocalCooking.Client.Dependencies.AuthToken (AuthTokenFailure (..))
-import LocalCooking.Auth.Error (AuthError (..))
+import LocalCooking.Client.Dependencies.AuthToken (AuthTokenFailure (..), LoginFailure (..))
+import Facebook.Types (FacebookLoginReturnError (..))
 
 import Prelude
 
@@ -75,7 +75,6 @@ instance showSecurityMessage :: Show SecurityMessage where
 
 data SnackbarMessage
   = SnackbarMessageAuthFailure AuthTokenFailure
-  | SnackbarMessageAuthError AuthError
   | SnackbarMessageUserEmail UserEmailError
   | SnackbarMessageRegister (Maybe RegisterError)
   | SnackbarMessageRedirect RedirectError
@@ -138,13 +137,17 @@ spec = T.simpleSpec performAction render
               Nothing -> R.text ""
               Just x -> case x of
                 SnackbarMessageAuthFailure authFailure -> case authFailure of
-                  BadPassword -> R.text "Password incorrect, please try again."
-                  EmailDoesntExist -> R.text "Email address not found, please register."
-                SnackbarMessageAuthError authError -> case authError of
-                  FBLoginReturnBad code msg -> R.text $ "Bad Facebook login response: " <> code <> ", " <> msg
-                  FBLoginReturnDenied desc -> R.text $ "Facebook login denied: " <> desc
-                  FBLoginReturnBadParse -> R.text "Internal error: Facebook login return unparsable."
-                  FBLoginReturnNoUser -> R.text "Facebook user not recognized, please link your account."
+                  FBLoginReturnBad a b -> R.text $ "Facebook login failed: " <> a <> ", " <> b
+                  FBLoginReturnDenied a -> R.text $ "Facebook login denied: " <> a
+                  FBLoginReturnBadParse -> R.text "Internal error - bad Facebook login"
+                  FBLoginReturnNoUser _ -> R.text "Facebook user not recognized"
+                  FBLoginReturnError fb -> case fb of
+                    FacebookLoginVerifyParseFailure a -> R.text $ "Facebook parse failure: " <> a
+                    FacebookLoginUserDetailsParseFailure a -> R.text $ "Facebook parse failure: " <> a
+                    FacebookLoginGetTokenError' a b c d -> R.text $ "Facebook get token error: " <> a <> ", " <> b <> ", " <> show c <> ", " <> d
+                  AuthTokenLoginFailure f -> case f of
+                    BadPassword -> R.text "Password incorrect, please try again."
+                    EmailDoesntExist -> R.text "Email address not found, please register."
                   AuthExistsFailure -> R.text "Warning: You've been logged out; your session expired."
                 SnackbarMessageUserEmail userEmail -> case userEmail of
                   UserEmailNoInitOut -> R.text "Internal Error: userEmail resource failed"

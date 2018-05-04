@@ -6,10 +6,8 @@ import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..))
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Auth.Error (AuthError (AuthExistsFailure))
 import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues, PasswordVerifyInitIn (PasswordVerifyInitInUnauth), PasswordVerifyInitOut (PasswordVerifyInitOutSuccess))
-import LocalCooking.Client.Dependencies.AuthToken (AuthTokenFailure (BadPassword))
 import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
 import LocalCooking.Links.Class (registerLink, toLocation, class LocalCookingSiteLinks, class ToLocation)
 import Facebook.Call (FacebookLoginLink (..), facebookLoginLinkToURI)
