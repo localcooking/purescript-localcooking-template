@@ -23,6 +23,7 @@ import Control.Monad.Eff.Ref.Extra (takeRef)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.Eff.Console (log)
 
 import Thermite as T
 import React as R
@@ -314,7 +315,11 @@ security
 
       mX <- takeRef initFormDataRef
       case mX of
-        Just (FacebookLoginUnsavedFormDataSecurity {email,emailConfirm}) -> do
-          One.putQueue emailSetValueQueue email
-          One.putQueue emailConfirmSetValueQueue emailConfirm
+        Just x -> do
+          unsafeCoerceEff $ log "Taken by security..."
+          case x of
+            FacebookLoginUnsavedFormDataSecurity {email,emailConfirm} -> do
+              One.putQueue emailSetValueQueue email
+              One.putQueue emailConfirmSetValueQueue emailConfirm
+            _ -> pure unit
         _ -> pure unit

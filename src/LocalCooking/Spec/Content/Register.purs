@@ -20,6 +20,7 @@ import Text.Email.Validate (EmailAddress)
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.Eff.Console (log)
 import Control.Monad.Eff.Ref (REF, Ref)
 import Control.Monad.Eff.Ref.Extra (takeRef)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
@@ -318,7 +319,11 @@ register
 
       mX <- takeRef initFormDataRef
       case mX of
-        Just (FacebookLoginUnsavedFormDataRegister {email,emailConfirm}) -> do
-          One.putQueue emailSetValueQueue email
-          One.putQueue emailConfirmSetValueQueue emailConfirm
+        Just x -> do
+          unsafeCoerceEff $ log "Taken by register..."
+          case x of
+            FacebookLoginUnsavedFormDataRegister {email,emailConfirm} -> do
+              One.putQueue emailSetValueQueue email
+              One.putQueue emailConfirmSetValueQueue emailConfirm
+            _ -> pure unit
         _ -> pure unit
