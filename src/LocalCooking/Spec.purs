@@ -421,6 +421,8 @@ spec
                         , toRoot: siteLinks rootLink
                         , env
                         , initFormDataRef
+                        , toURI
+                        , currentPageSignal
                         }
                       ]
                   | otherwise ->

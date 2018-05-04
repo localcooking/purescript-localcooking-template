@@ -279,8 +279,6 @@ security
       a <- IxSignal.make e1
       b <- IxSignal.make e2
       pure {emailSignal: a, emailConfirmSignal: b}
-    -- emailSignal = unsafePerformEff $ IxSignal.make $ Left ""
-    -- emailConfirmSignal = unsafePerformEff $ IxSignal.make $ Left ""
     emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordSignal = unsafePerformEff (IxSignal.make "")

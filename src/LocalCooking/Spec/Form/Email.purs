@@ -126,7 +126,7 @@ email :: forall eff
 email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal} =
   let init =
         { initEmail: case unsafePerformEff (IxSignal.get emailSignal) of
-            Left e -> unsafePerformEff $ e <$ log ("uhh.. " <> e)
+            Left e -> e
             Right x -> case x of
               Nothing -> ""
               Just y -> Email.toString y

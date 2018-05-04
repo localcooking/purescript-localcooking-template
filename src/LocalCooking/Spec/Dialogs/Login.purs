@@ -165,7 +165,7 @@ loginDialog
                             _ -> false
                           , href: case mLink of
                             Nothing -> ""
-                            Just link -> URI.print $ facebookLoginLinkToURI env link
+                            Just link -> URI.print (facebookLoginLinkToURI env link)
                           } [icon]
                       )
               in  [ mkFab "#3b5998" "#1e3f82" facebookIcon $

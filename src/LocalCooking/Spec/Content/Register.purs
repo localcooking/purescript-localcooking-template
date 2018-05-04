@@ -7,16 +7,22 @@ import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Spec.Google.ReCaptcha (reCaptcha)
 import LocalCooking.Spec.Snackbar (SnackbarMessage (SnackbarMessageRegister), RegisterError (..))
 import LocalCooking.Types.Env (Env)
-import Google.ReCaptcha (ReCaptchaResponse)
+import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
+import LocalCooking.Links.Class (class ToLocation, toLocation)
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues, RegisterInitIn (..), RegisterInitOut (..))
 import LocalCooking.Common.Password (hashPassword)
-import Facebook.State (FacebookLoginUnsavedFormData (FacebookLoginUnsavedFormDataRegister))
+import Google.ReCaptcha (ReCaptchaResponse)
+import Facebook.Call (FacebookLoginLink (..), facebookLoginLinkToURI)
+import Facebook.State (FacebookLoginState (..), FacebookLoginUnsavedFormData (FacebookLoginUnsavedFormDataRegister))
 
 import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple (..))
 import Data.Either (Either (..))
 import Data.UUID (genUUID, GENUUID)
+import Data.URI (URI)
+import Data.URI.URI (print) as URI
+import Data.URI.Location (Location)
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
@@ -33,6 +39,7 @@ import React as R
 import React.DOM as R
 import React.DOM.Props as RP
 import React.Queue.WhileMounted as Queue
+import React.Icons (facebookIcon, twitterIcon, googleIcon)
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Typography (typography)
@@ -41,6 +48,8 @@ import MaterialUI.Button as Button
 import MaterialUI.Divider (divider)
 import MaterialUI.Grid (grid)
 import MaterialUI.Grid as Grid
+import MaterialUI.Button (button)
+import MaterialUI.Button as Button
 import Crypto.Scrypt (SCRYPT)
 
 import IxSignal.Internal (IxSignal)
@@ -70,11 +79,14 @@ type Effects eff =
   | eff)
 
 
-spec :: forall eff
-      . { registerQueues           :: RegisterSparrowClientQueues (Effects eff)
-        , errorMessageQueue        :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-        , toRoot                   :: Eff (Effects eff) Unit
-        , env                      :: Env
+spec :: forall eff siteLinks
+      . ToLocation siteLinks
+     => { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
+        , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+        , toRoot            :: Eff (Effects eff) Unit
+        , env               :: Env
+        , toURI             :: Location -> URI
+        , currentPageSignal :: IxSignal (Effects eff) siteLinks
         , email ::
           { signal        :: IxSignal (Effects eff) (Either String (Maybe EmailAddress))
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
@@ -110,6 +122,8 @@ spec
   , password
   , passwordConfirm
   , submit
+  , toURI
+  , currentPageSignal
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
@@ -200,6 +214,39 @@ spec
             , updatedQueue: passwordConfirm.updatedQueue
             , errorQueue: passwordConfirmErrorQueue
             }
+          , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em"}] $
+              let mkFab mainColor darkColor icon mLink =
+                    Button.withStyles
+                      (\theme ->
+                        { root: createStyles
+                          { backgroundColor: mainColor
+                          , color: "#ffffff"
+                          , "&:hover": {backgroundColor: darkColor}
+                          }
+                        }
+                      )
+                      (\{classes} ->
+                        button
+                          { variant: Button.fab
+                          , classes: Button.createClasses {root: classes.root}
+                          , disabled: case mLink of
+                            Nothing -> true
+                            _ -> false
+                          , href: case mLink of
+                            Nothing -> ""
+                            Just link -> URI.print (facebookLoginLinkToURI env link)
+                          } [icon]
+                      )
+              in  [ mkFab "#3b5998" "#1e3f82" facebookIcon $
+                      Just $ FacebookLoginLink
+                      { redirectURL: toURI (toLocation FacebookLoginReturn)
+                      , state: FacebookLoginState
+                        { origin: unsafePerformEff (IxSignal.get currentPageSignal)
+                        }
+                      }
+                  , mkFab "#1da1f3" "#0f8cdb" twitterIcon Nothing
+                  , mkFab "#dd4e40" "#c13627" googleIcon Nothing
+                  ]
           , reCaptcha
             { reCaptchaSignal
             , env
@@ -223,12 +270,15 @@ spec
         passwordConfirmErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
 
 
-register :: forall eff
-          . { registerQueues       :: RegisterSparrowClientQueues (Effects eff)
-            , errorMessageQueue    :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-            , toRoot               :: Eff (Effects eff) Unit
-            , env                  :: Env
+register :: forall eff siteLinks
+          . ToLocation siteLinks
+         => { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
+            , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+            , toRoot            :: Eff (Effects eff) Unit
+            , env               :: Env
             , initFormDataRef   :: Ref (Maybe FacebookLoginUnsavedFormData)
+            , toURI             :: Location -> URI
+            , currentPageSignal :: IxSignal (Effects eff) siteLinks
             }
          -> R.ReactElement
 register
@@ -237,6 +287,8 @@ register
   , toRoot
   , env
   , initFormDataRef
+  , toURI
+  , currentPageSignal
   } =
   let {spec: reactSpec, dispatcher} =
         T.createReactSpec
@@ -245,6 +297,8 @@ register
             , errorMessageQueue
             , toRoot
             , env
+            , toURI
+            , currentPageSignal
             , email:
               { signal: emailSignal
               , updatedQueue: emailUpdatedQueue
@@ -282,15 +336,12 @@ register
           unsafeCoerceEff $ log "Taken by register..."
           case x of
             FacebookLoginUnsavedFormDataRegister {email,emailConfirm} -> do
-              unsafeCoerceEff $ log $ "sending... " <> email <> ", " <> emailConfirm
               pure (Tuple (Left email) (Left emailConfirm))
             _ -> pure (Tuple (Left "") (Left ""))
         _ -> pure (Tuple (Left "") (Left ""))
       a <- IxSignal.make e1
       b <- IxSignal.make e2
       pure {emailSignal: a, emailConfirmSignal: b}
-    -- emailSignal = unsafePerformEff (IxSignal.make (Left ""))
-    -- emailConfirmSignal = unsafePerformEff (IxSignal.make (Left ""))
     emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
     passwordSignal = unsafePerformEff (IxSignal.make "")
