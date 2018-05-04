@@ -25,6 +25,7 @@ import Control.Monad.Eff.Ref (REF, Ref)
 import Control.Monad.Eff.Ref.Extra (takeRef)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
+import Control.Monad.Eff.Timer (TIMER, setTimeout)
 
 import Thermite as T
 import React as R
@@ -64,6 +65,7 @@ type Effects eff =
   , scrypt    :: SCRYPT
   , exception :: EXCEPTION
   , uuid      :: GENUUID
+  , timer     :: TIMER
   | eff)
 
 
@@ -323,7 +325,9 @@ register
           unsafeCoerceEff $ log "Taken by register..."
           case x of
             FacebookLoginUnsavedFormDataRegister {email,emailConfirm} -> do
-              One.putQueue emailSetValueQueue email
-              One.putQueue emailConfirmSetValueQueue emailConfirm
+              void $ setTimeout 200 $ do
+                unsafeCoerceEff $ log $ "sending... " <> email <> ", " <> emailConfirm
+                One.putQueue emailSetValueQueue email
+                One.putQueue emailConfirmSetValueQueue emailConfirm
             _ -> pure unit
         _ -> pure unit
