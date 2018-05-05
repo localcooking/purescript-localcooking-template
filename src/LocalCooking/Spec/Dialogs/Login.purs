@@ -43,6 +43,7 @@ import MaterialUI.Button (button)
 import MaterialUI.Button as Button
 import Crypto.Scrypt (SCRYPT)
 
+import Queue.Types (readOnly, writeOnly)
 import Queue (WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -92,6 +93,7 @@ loginDialog
   , errorMessageQueue
   , windowSizeSignal
   , currentPageSignal
+  , closeQueue: Nothing
   , toURI
   , env
   , buttons: \{close} ->
@@ -210,6 +212,6 @@ loginDialog
   where
     emailSignal = unsafePerformEff $ IxSignal.make $ Email.EmailPartial ""
     passwordSignal = unsafePerformEff $ IxSignal.make ""
-    emailQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-    passwordQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-    passwordErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
+    emailQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
+    passwordQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
+    passwordErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue

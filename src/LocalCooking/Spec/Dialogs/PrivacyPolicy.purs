@@ -63,6 +63,7 @@ privacyPolicyDialog
   , errorMessageQueue
   , windowSizeSignal
   , currentPageSignal
+  , closeQueue: Nothing
   , toURI
   , env
   , buttons: \_ -> []

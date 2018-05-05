@@ -65,6 +65,7 @@ import IxSignal.Internal as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
 import Signal.DOM (windowDimensions)
+import Queue.Types (writeOnly)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -338,7 +339,7 @@ defaultMain
                     One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
                   continue rootLink
             | otherwise -> continue siteLink
-    pure (One.writeOnly q)
+    pure (writeOnly q)
 
 
   onceRef <- newRef false

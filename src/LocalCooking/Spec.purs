@@ -69,6 +69,7 @@ import DOM.HTML.Types (HISTORY)
 import Browser.WebStorage (WEB_STORAGE)
 import Crypto.Scrypt (SCRYPT)
 
+import Queue.Types (writeOnly, readOnly)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -255,7 +256,7 @@ spec
         , openLogin: unsafeCoerceEff $ dispatch AttemptLogin
         , windowSizeSignal
         , siteLinks
-        , mobileMenuButtonSignal: One.writeOnly mobileMenuButtonSignal
+        , mobileMenuButtonSignal: writeOnly mobileMenuButtonSignal
         , currentPageSignal
         , authTokenSignal
         , userDetailsSignal
@@ -266,7 +267,7 @@ spec
       [ loginDialog
         { loginDialogQueue: dialog.loginQueue
         , passwordVerifyQueues: dependencies.passwordVerifyQueues
-        , errorMessageQueue: One.writeOnly errorMessageQueue
+        , errorMessageQueue: writeOnly errorMessageQueue
         , windowSizeSignal
         , currentPageSignal
         , toRegister: siteLinks registerLink
@@ -276,7 +277,7 @@ spec
       , authenticateDialog
         { authenticateDialogQueue: dialog.authenticateQueue
         , passwordVerifyQueues: dependencies.passwordVerifyQueues
-        , errorMessageQueue: One.writeOnly errorMessageQueue
+        , errorMessageQueue: writeOnly errorMessageQueue
         , authTokenSignal
         , windowSizeSignal
         , currentPageSignal
@@ -285,14 +286,14 @@ spec
         }
       , privacyPolicyDialog
         { privacyPolicyDialogQueue: dialog.privacyPolicyQueue
-        , errorMessageQueue: One.writeOnly errorMessageQueue
+        , errorMessageQueue: writeOnly errorMessageQueue
         , windowSizeSignal
         , currentPageSignal
         , toURI
         , env
         }
       , leftMenu
-        { mobileDrawerOpenSignal: One.readOnly mobileMenuButtonSignal
+        { mobileDrawerOpenSignal: readOnly mobileMenuButtonSignal
         , siteLinks
         , toURI
         , windowSizeSignal
@@ -302,7 +303,7 @@ spec
         , buttons: templateArgs.leftDrawer.buttons
         }
       , messages
-        { errorMessageQueue: One.readOnly errorMessageQueue
+        { errorMessageQueue: readOnly errorMessageQueue
         }
       ]
       where
@@ -408,7 +409,7 @@ spec
                         | d == userDetailsSecurityLink ->
                           [ security
                             { env
-                            , errorMessageQueue: One.writeOnly errorMessageQueue
+                            , errorMessageQueue: writeOnly errorMessageQueue
                             , securityQueues: dependencies.securityQueues
                             , authenticateDialogQueue: dialog.authenticateQueue
                             , authTokenSignal
@@ -422,7 +423,7 @@ spec
                 _ | state.currentPage == registerLink ->
                       [ register
                         { registerQueues: dependencies.registerQueues
-                        , errorMessageQueue: One.writeOnly errorMessageQueue
+                        , errorMessageQueue: writeOnly errorMessageQueue
                         , toRoot: siteLinks rootLink
                         , env
                         , initFormDataRef

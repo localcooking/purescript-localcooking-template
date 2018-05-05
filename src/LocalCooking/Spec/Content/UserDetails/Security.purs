@@ -42,6 +42,7 @@ import Crypto.Scrypt (SCRYPT)
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import Queue.Types (readOnly, writeOnly)
 import Queue (WRITE, READ)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -213,8 +214,8 @@ spec
         }
       ]
       where
-        passwordErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
-        passwordConfirmErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
+        passwordErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+        passwordConfirmErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
 
 
 security :: forall eff
@@ -324,12 +325,12 @@ security
       a <- IxSignal.make e1
       b <- IxSignal.make e2
       pure {emailSignal: a, emailConfirmSignal: b}
-    emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-    emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    emailUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
+    emailConfirmUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     passwordSignal = unsafePerformEff (IxSignal.make "")
-    passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     passwordConfirmSignal = unsafePerformEff (IxSignal.make "")
-    passwordConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordConfirmUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     pendingSignal = unsafePerformEff (IxSignal.make false)
-    submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    submitQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     submitDisabledSignal = unsafePerformEff (IxSignal.make true)

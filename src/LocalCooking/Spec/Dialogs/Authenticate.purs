@@ -29,6 +29,7 @@ import DOM (DOM)
 
 import Crypto.Scrypt (SCRYPT)
 
+import Queue.Types (readOnly, writeOnly)
 import Queue (WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -76,6 +77,7 @@ authenticateDialog
   , errorMessageQueue
   , windowSizeSignal
   , currentPageSignal
+  , closeQueue: Nothing
   , toURI
   , env
   , buttons: \_ -> []
@@ -129,5 +131,5 @@ authenticateDialog
   }
   where
     passwordSignal = unsafePerformEff $ IxSignal.make ""
-    passwordQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-    passwordErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
+    passwordQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
+    passwordErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue

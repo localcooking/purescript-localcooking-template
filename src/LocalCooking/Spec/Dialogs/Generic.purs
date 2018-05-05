@@ -25,7 +25,7 @@ import Data.Time.Duration (Milliseconds (..))
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
-import Control.Monad.Aff (Aff, delay)
+import Control.Monad.Aff (Aff, delay, runAff_, makeAff, nonCanceler)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafeCoerceEff, unsafePerformEff)
 import Control.Monad.Eff.Ref (REF)
@@ -50,6 +50,7 @@ import MaterialUI.DialogActions (dialogActions)
 import MaterialUI.Button (button)
 import MaterialUI.Button as Button
 
+import Queue.Types (readOnly, allowReading)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -98,6 +99,7 @@ spec :: forall eff siteLinks userDetailsLinks output
         , env :: Env
         , dialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe output)
         , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+        , closeQueue :: Maybe (One.Queue (write :: WRITE) (Effects eff) Unit)
         , content ::
           { component ::
             { submitDisabled :: Boolean -> Eff (Effects eff) Unit
@@ -124,6 +126,7 @@ spec
   , content
   , pendingSignal
   , dialogOutputQueue
+  , closeQueue
   , buttons
   , title
   , errorMessageQueue
@@ -148,7 +151,11 @@ spec
         case mOutput of
           Nothing -> pure unit -- FIXME error out?
           Just output -> do
-            performAction Close props state
+            case closeQueue of
+              Nothing -> performAction Close props state
+              Just closeQueue' -> do
+                _ <- liftBase $ One.drawQueue $ allowReading closeQueue'
+                performAction Close props state
             liftEff (One.putQueue dialogOutputQueue (Just output))
 
     render :: T.Render (State siteLinks) Unit (Action siteLinks)
@@ -219,6 +226,7 @@ genericDialog :: forall eff siteLinks userDetailsLinks output
                  , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
                  , windowSizeSignal  :: IxSignal (Effects eff) WindowSize
                  , currentPageSignal :: IxSignal (Effects eff) siteLinks
+                 , closeQueue        :: Maybe (One.Queue (write :: WRITE) (Effects eff) Unit)
                  , toURI             :: Location -> URI
                  , env               :: Env
                  , buttons           ::
@@ -241,6 +249,7 @@ genericDialog
   , errorMessageQueue
   , windowSizeSignal
   , currentPageSignal
+  , closeQueue
   , toURI
   , env
   , content
@@ -259,6 +268,7 @@ genericDialog
             { toURI
             , env
             , errorMessageQueue
+            , closeQueue
             , buttons
             , title
             , submit:
@@ -289,4 +299,4 @@ genericDialog
   where
     submitDisabledSignal = unsafePerformEff $ IxSignal.make false
     pendingSignal = if pends then unsafePerformEff (Just <$> IxSignal.make false) else Nothing
-    submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    submitQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue

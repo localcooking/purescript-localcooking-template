@@ -56,6 +56,7 @@ import Crypto.Scrypt (SCRYPT)
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import Queue.Types (readOnly, writeOnly)
 import Queue (WRITE, READ)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -287,8 +288,8 @@ spec
         }
       ]
       where
-        passwordErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
-        passwordConfirmErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
+        passwordErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+        passwordConfirmErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
 
 
 register :: forall eff siteLinks
@@ -411,14 +412,14 @@ register
       b <- IxSignal.make emailConfirm
       unsafeCoerceEff $ log $ "From register: " <> show fbUserId'
       pure {emailSignal: a, emailConfirmSignal: b,fbUserId:fbUserId'}
-    emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-    emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    emailUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
+    emailConfirmUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     passwordSignal = unsafePerformEff (IxSignal.make "")
-    passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     passwordConfirmSignal = unsafePerformEff (IxSignal.make "")
-    passwordConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordConfirmUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     reCaptchaSignal = unsafePerformEff (IxSignal.make Nothing)
     pendingSignal = unsafePerformEff (IxSignal.make false)
-    submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    submitQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     submitDisabledSignal = unsafePerformEff (IxSignal.make true)
     _ = unsafePerformEff $ log "rendering register.."
