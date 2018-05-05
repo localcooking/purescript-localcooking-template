@@ -9,6 +9,7 @@ import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, register
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues, PreliminaryAuthToken (..))
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitOut, UserEmailInitIn)
+import LocalCooking.Client.Dependencies.UserRoles (UserRolesSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
 import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
@@ -394,6 +395,8 @@ defaultMain
     ) <- newSparrowStaticClientQueues
   ( userEmailQueues :: UserEmailSparrowClientQueues (Effects eff)
     ) <- newSparrowStaticClientQueues
+  ( userRolesQueues :: UserRolesSparrowClientQueues (Effects eff)
+    ) <- newSparrowStaticClientQueues
   ( securityQueues :: SecuritySparrowClientQueues (Effects eff)
     ) <- newSparrowStaticClientQueues
   ( passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
@@ -402,6 +405,7 @@ defaultMain
     unpackClient (Topic ["template", "authToken"]) (sparrowClientQueues authTokenQueues)
     unpackClient (Topic ["template", "register"]) (sparrowStaticClientQueues registerQueues)
     unpackClient (Topic ["template", "userEmail"]) (sparrowStaticClientQueues userEmailQueues)
+    unpackClient (Topic ["template", "userRoles"]) (sparrowStaticClientQueues userRolesQueues)
     unpackClient (Topic ["template", "security"]) (sparrowStaticClientQueues securityQueues)
     unpackClient (Topic ["template", "passwordVerify"]) (sparrowStaticClientQueues passwordVerifyQueues)
     deps
