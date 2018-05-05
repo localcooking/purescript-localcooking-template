@@ -69,6 +69,7 @@ loginDialog :: forall eff siteLinks userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
             => { loginDialogQueue     :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
+               , loginCloseQueue      :: One.Queue (write :: WRITE) (Effects eff) Unit
                , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
                , errorMessageQueue    :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
                , windowSizeSignal     :: IxSignal (Effects eff) WindowSize
@@ -80,6 +81,7 @@ loginDialog :: forall eff siteLinks userDetailsLinks
             -> R.ReactElement
 loginDialog
   { loginDialogQueue
+  , loginCloseQueue
   , passwordVerifyQueues
   , errorMessageQueue
   , windowSizeSignal
@@ -93,7 +95,7 @@ loginDialog
   , errorMessageQueue
   , windowSizeSignal
   , currentPageSignal
-  , closeQueue: Nothing
+  , closeQueue: Just loginCloseQueue
   , toURI
   , env
   , buttons: \{close} ->

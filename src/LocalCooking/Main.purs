@@ -416,6 +416,9 @@ defaultMain
     deps
 
 
+  ( loginCloseQueue :: One.Queue (write :: WRITE) (Effects eff) Unit
+    ) <- writeOnly <$> One.newQueue
+
   -- user details fetcher and clearer
   let userDetailsOnAuth mAuth = case mAuth of
         Nothing -> IxSignal.set Nothing userDetailsSignal
@@ -424,9 +427,9 @@ defaultMain
                 Left _ -> do
                   IxSignal.set Nothing userDetailsSignal
                   One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
-                Right mUserDetails ->
+                Right mUserDetails -> do
                   IxSignal.set mUserDetails userDetailsSignal
-                  -- TODO send full user details
+                  One.putQueue loginCloseQueue unit
 
           runAff_ resolve $ userDetails.obtain
             { email: parallel $ do
@@ -469,6 +472,7 @@ defaultMain
           , authTokenSignal
           , userDetailsSignal
           , privacyPolicyDialogQueue
+          , loginCloseQueue
           , initFormDataRef
           , dependencies:
             { authTokenQueues

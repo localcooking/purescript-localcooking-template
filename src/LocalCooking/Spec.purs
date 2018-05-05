@@ -140,6 +140,7 @@ spec :: forall eff siteLinks userDetailsLinks userDetails
           }
         , dialog ::
           { loginQueue         :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
+          , loginCloseQueue    :: One.Queue (write :: WRITE) (Effects eff) Unit
           , authenticateQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
           , privacyPolicyQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
           }
@@ -266,6 +267,7 @@ spec
       ] <> mainContent <>
       [ loginDialog
         { loginDialogQueue: dialog.loginQueue
+        , loginCloseQueue: dialog.loginCloseQueue
         , passwordVerifyQueues: dependencies.passwordVerifyQueues
         , errorMessageQueue: writeOnly errorMessageQueue
         , windowSizeSignal
@@ -497,6 +499,7 @@ app :: forall eff siteLinks userDetailsLinks userDetails
        , authTokenSignal      :: IxSignal (Effects eff) (Maybe AuthToken)
        , userDetailsSignal    :: IxSignal (Effects eff) (Maybe userDetails)
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
+       , loginCloseQueue      :: One.Queue (write :: WRITE) (Effects eff) Unit
        , initFormDataRef      :: Ref (Maybe FacebookLoginUnsavedFormData)
        , dependencies ::
           { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
@@ -566,6 +569,7 @@ app
   , errorMessageQueue
   , authTokenSignal
   , userDetailsSignal
+  , loginCloseQueue
   , dependencies
   , templateArgs
   , env
@@ -589,6 +593,7 @@ app
           , dependencies
           , dialog:
             { loginQueue: loginDialogQueue
+            , loginCloseQueue
             , authenticateQueue: authenticateDialogQueue
             , privacyPolicyQueue: privacyPolicyDialogQueue
             }
