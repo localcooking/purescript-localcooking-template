@@ -14,6 +14,7 @@ import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
 import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
+import LocalCooking.Common.User.Role (UserRole)
 import LocalCooking.User (class UserDetails)
 import Facebook.State (FacebookLoginUnsavedFormData)
 
@@ -135,7 +136,10 @@ type LocalCookingArgs siteLinks userDetails eff =
                  , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                  , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                  } -> Array ReactElement
-    , obtain  :: ParAff eff (Maybe EmailAddress) -> Aff eff (Maybe userDetails)
+    , obtain  ::
+      { email :: ParAff eff (Maybe EmailAddress)
+      , roles :: ParAff eff (Array UserRole)
+      } -> Aff eff (Maybe userDetails)
     }
   , deps          :: SparrowClientT eff (Eff eff) Unit
   , env           :: Env
@@ -423,17 +427,30 @@ defaultMain
                   IxSignal.set mUserDetails userDetailsSignal
                   -- TODO send full user details
 
-          runAff_ resolve $ userDetails.obtain $ parallel $ do
-            mInitOut <- OneIO.callAsync userEmailQueues (AuthInitIn {token: authToken, subj: JSONUnit})
-            case mInitOut of
-              Nothing -> do
-                liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
-                pure Nothing
-              Just initOut -> case initOut of
-                AuthInitOut {subj: email} -> pure (Just email)
-                AuthInitOutNoAuth -> do
-                  liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
-                  pure Nothing
+          runAff_ resolve $ userDetails.obtain
+            { email: parallel $ do
+                mInitOut <- OneIO.callAsync userEmailQueues (AuthInitIn {token: authToken, subj: JSONUnit})
+                case mInitOut of
+                  Nothing -> do
+                    liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
+                    pure Nothing
+                  Just initOut -> case initOut of
+                    AuthInitOut {subj: email} -> pure (Just email)
+                    AuthInitOutNoAuth -> do
+                      liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
+                      pure Nothing
+            , roles: parallel $ do
+                mInitOut <- OneIO.callAsync userRolesQueues (AuthInitIn {token: authToken, subj: JSONUnit})
+                case mInitOut of
+                  Nothing -> do
+                    liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
+                    pure []
+                  Just initOut -> case initOut of
+                    AuthInitOut {subj: roles} -> pure roles
+                    AuthInitOutNoAuth -> do
+                      liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
+                      pure []
+            }
   IxSignal.subscribe userDetailsOnAuth authTokenSignal
 
 
