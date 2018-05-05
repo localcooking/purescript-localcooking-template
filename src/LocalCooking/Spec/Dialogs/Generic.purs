@@ -153,9 +153,7 @@ spec
           Just output -> do
             case closeQueue of
               Nothing -> performAction Close props state
-              Just closeQueue' -> do
-                _ <- liftBase $ One.drawQueue $ allowReading closeQueue'
-                performAction Close props state
+              Just closeQueue' -> pure unit
             liftEff (One.putQueue dialogOutputQueue (Just output))
 
     render :: T.Render (State siteLinks) Unit (Action siteLinks)
@@ -291,6 +289,13 @@ genericDialog
         $ Queue.whileMountedOne
             dialogInputQueue
             (\this _ -> unsafeCoerceEff $ dispatcher this Open)
+        $ ( case closeQueue of
+              Nothing -> id
+              Just closeQueue' ->
+                Queue.whileMountedOne
+                  (allowReading closeQueue')
+                  (\this _ -> unsafeCoerceEff $ dispatcher this Close)
+          )
         $ Queue.whileMountedIxUUID
             submitQueue
             (\this _ -> unsafeCoerceEff $ dispatcher this Submit)
