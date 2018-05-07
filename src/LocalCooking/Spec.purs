@@ -210,14 +210,11 @@ spec
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
-      ChangedCurrentPage p -> do
-        liftEff $ log "caused by currentPage"
+      ChangedCurrentPage p ->
         void $ T.cotransform _ { currentPage = p }
-      ChangedWindowSize p -> do
-        liftEff $ log "caused by windowSize"
+      ChangedWindowSize p ->
         void $ T.cotransform _ { windowSize = p }
-      GotAuthToken mToken -> do
-        liftEff $ log "caused by authToken"
+      GotAuthToken mToken ->
         void $ T.cotransform _ { authToken = mToken }
       Logout -> liftEff $ do
         One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
