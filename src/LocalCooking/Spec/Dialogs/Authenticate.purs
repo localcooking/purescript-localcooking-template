@@ -64,9 +64,7 @@ authenticateDialog
   genericDialog
   params
   { dialogQueue: authenticateDialogQueue
-  , errorMessageQueue
   , closeQueue: Nothing
-  , env
   , buttons: \_ -> []
   , title: "Authenticate"
   , submitValue: "Submit"

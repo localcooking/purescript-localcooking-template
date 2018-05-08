@@ -39,22 +39,16 @@ privacyPolicyDialog :: forall eff siteLinks userDetails userDetailsLinks
             => ToLocation siteLinks
             => LocalCookingParams siteLinks userDetails (Effects eff)
             -> { privacyPolicyDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
-               , errorMessageQueue        :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-               , env                      :: Env
                }
             -> R.ReactElement
 privacyPolicyDialog
   params@{toURI}
   { privacyPolicyDialogQueue
-  , errorMessageQueue
-  , env
   } =
   genericDialog
   params
   { dialogQueue: privacyPolicyDialogQueue
-  , errorMessageQueue
   , closeQueue: Nothing
-  , env
   , buttons: \_ -> []
   , title: "Privacy Policy"
   , submitValue: "Acknowledge"

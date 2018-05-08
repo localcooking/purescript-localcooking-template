@@ -227,8 +227,6 @@ spec
       , privacyPolicyDialog
         params
         { privacyPolicyDialogQueue: dialog.privacyPolicyQueue
-        , errorMessageQueue: writeOnly errorMessageQueue
-        , env
         }
       , leftMenu
         params

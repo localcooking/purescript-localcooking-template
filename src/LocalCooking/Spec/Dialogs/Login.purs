@@ -84,9 +84,7 @@ loginDialog
   genericDialog
   params
   { dialogQueue: loginDialogQueue
-  , errorMessageQueue
   , closeQueue: Just loginCloseQueue
-  , env
   , buttons: \{close} ->
     [ button
       { color: Button.secondary

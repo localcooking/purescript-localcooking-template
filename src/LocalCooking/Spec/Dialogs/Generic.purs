@@ -90,9 +90,7 @@ spec :: forall eff siteLinks userDetails userDetailsLinks output
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => ToLocation siteLinks
      => LocalCookingParams siteLinks userDetails (Effects eff)
-     -> { env :: Env
-        , dialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe output)
-        , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+     -> { dialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe output)
         , closeQueue :: Maybe (One.Queue (write :: WRITE) (Effects eff) Unit)
         , content ::
           { component ::
@@ -115,15 +113,13 @@ spec :: forall eff siteLinks userDetails userDetailsLinks output
      -> T.Spec (Effects eff) (State siteLinks userDetails) Unit (Action siteLinks userDetails)
 spec
   {toURI}
-  { env
-  , submit
+  { submit
   , content
   , pendingSignal
   , dialogOutputQueue
   , closeQueue
   , buttons
   , title
-  , errorMessageQueue
   } = T.simpleSpec (performAction <> performActionLocalCooking getLCState getLCAction) render
   where
     performAction action props state = case action of
@@ -215,9 +211,7 @@ genericDialog :: forall eff siteLinks userDetails userDetailsLinks output
               => ToLocation siteLinks
               => LocalCookingParams siteLinks userDetails (Effects eff)
               -> { dialogQueue       :: OneIO.IOQueues (Effects eff) Unit (Maybe output)
-                 , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
                  , closeQueue        :: Maybe (One.Queue (write :: WRITE) (Effects eff) Unit)
-                 , env               :: Env
                  , buttons           ::
                     { close :: Eff (Effects eff) Unit
                     } -> Array R.ReactElement
@@ -236,9 +230,7 @@ genericDialog :: forall eff siteLinks userDetails userDetailsLinks output
 genericDialog
   params
   { dialogQueue: OneIO.IOQueues {input: dialogInputQueue, output: dialogOutputQueue}
-  , errorMessageQueue
   , closeQueue
-  , env
   , content
   , submitValue
   , buttons
@@ -249,9 +241,7 @@ genericDialog
         T.createReactSpec
           ( spec
             params
-            { env
-            , errorMessageQueue
-            , closeQueue
+            { closeQueue
             , buttons
             , title
             , submit:
