@@ -12,8 +12,8 @@ import LocalCooking.Spec.Flags.USA (usaFlag, usaFlagViewBox)
 import LocalCooking.Spec.Flags.Colorado (coloradoFlag, coloradoFlagViewBox)
 import LocalCooking.Window (WindowSize (Laptop))
 import LocalCooking.Types.Env (Env)
+import LocalCooking.Types.Params (LocalCookingParams, LocalCookingState, LocalCookingAction, initLocalCookingState, performActionLocalCooking, whileMountedLocalCooking)
 import LocalCooking.Links.Class (registerLink, rootLink, userDetailsLink, getUserDetailsLink, userDetailsGeneralLink, userDetailsSecurityLink, class LocalCookingSiteLinks, class ToLocation)
-import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.Password (HashedPassword)
 import LocalCooking.Client.Dependencies.AuthToken
   ( AuthTokenSparrowClientQueues
@@ -29,14 +29,13 @@ import Facebook.State (FacebookLoginUnsavedFormData)
 import Sparrow.Client.Queue (callSparrowClientQueues)
 
 import Prelude
-import Data.URI (URI)
 import Data.URI.Location (Location)
 import Data.UUID (GENUUID)
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
+import Data.Lens (Lens', Prism', lens, prism')
 import Text.Email.Validate (EmailAddress)
-import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Console (CONSOLE, log)
+import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
@@ -51,7 +50,6 @@ import React as R
 import React.DOM as R
 import React.DOM.Props as RP
 import React.DOM.SVG as RS
-import React.Signal.WhileMounted as Signal
 import MaterialUI.MuiThemeProvider (ColorPalette, muiThemeProvider, createMuiTheme)
 import MaterialUI.CssBaseline (cssBaseline)
 import MaterialUI.Paper (paper)
@@ -73,34 +71,23 @@ import Queue.Types (writeOnly, readOnly)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
-import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 
 
 
-type State siteLinks =
-  { authToken :: Maybe AuthToken
-  , currentPage :: siteLinks
-  , windowSize :: WindowSize
-  }
+type State siteLinks userDetails = LocalCookingState siteLinks userDetails
 
 
-initialState :: forall siteLinks
-              . {initSiteLinks :: siteLinks, initWindowSize :: WindowSize} -> State siteLinks
-initialState {initSiteLinks,initWindowSize} =
-  { authToken: Nothing
-  , currentPage: initSiteLinks
-  , windowSize: initWindowSize
-  }
+initialState :: forall siteLinks userDetails
+              . LocalCookingState siteLinks userDetails -> State siteLinks userDetails
+initialState = id
 
 
-data Action siteLinks
-  = GotAuthToken (Maybe AuthToken)
-  | ChangedCurrentPage siteLinks
-  | ChangedWindowSize WindowSize
-  | Logout
+data Action siteLinks userDetails
+  = Logout
   | AttemptLogin
   | CallAuthToken AuthTokenInitIn
+  | LocalCookingAction (LocalCookingAction siteLinks userDetails)
 
 
 type Effects eff =
@@ -116,20 +103,24 @@ type Effects eff =
   , scrypt     :: SCRYPT
   | eff)
 
+getLCState :: forall siteLinks userDetails. Lens' (State siteLinks userDetails) (LocalCookingState siteLinks userDetails)
+getLCState = lens id (\_ x -> x)
+
+getLCAction :: forall siteLinks userDetails. Prism' (Action siteLinks userDetails) (LocalCookingAction siteLinks userDetails)
+getLCAction = prism' LocalCookingAction $ case _ of
+  LocalCookingAction x -> Just x
+  _ -> Nothing
+
+
 spec :: forall eff siteLinks userDetailsLinks userDetails
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => Eq siteLinks
      => ToLocation siteLinks
      => UserDetails userDetails
-     => { toURI               :: Location -> URI
-        , siteLinks           :: siteLinks -> Eff (Effects eff) Unit
-        , env                 :: Env
+     => LocalCookingParams siteLinks userDetails (Effects eff)
+     -> { env                 :: Env
         , development         :: Boolean
         , errorMessageQueue   :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
-        , windowSizeSignal    :: IxSignal (Effects eff) WindowSize
-        , currentPageSignal   :: IxSignal (Effects eff) siteLinks
-        , authTokenSignal     :: IxSignal (Effects eff) (Maybe AuthToken)
-        , userDetailsSignal   :: IxSignal (Effects eff) (Maybe userDetails)
         , initFormDataRef     :: Ref (Maybe FacebookLoginUnsavedFormData)
         , dependencies ::
           { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
@@ -145,77 +136,36 @@ spec :: forall eff siteLinks userDetailsLinks userDetails
           , privacyPolicyQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
           }
         , templateArgs ::
-          { content :: { toURI :: Location -> URI
-                       , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                       , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                       , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                       , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                       , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                       } -> Array R.ReactElement
+          { content :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
           , topbar ::
             { imageSrc :: Location
-            , buttons :: { toURI :: Location -> URI
-                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                          } -> Array R.ReactElement
+            , buttons :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
             }
           , leftDrawer ::
-            { buttons :: { toURI :: Location -> URI
-                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                          } -> Array R.ReactElement
+            { buttons :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
             }
           , userDetails ::
-            { buttons :: { toURI :: Location -> URI
-                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                          } -> Array R.ReactElement
-            , content :: { toURI :: Location -> URI
-                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                          } -> Array R.ReactElement
+            { buttons :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
+            , content :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
           }
         , extendedNetwork :: Array R.ReactElement
         }
-     -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
+     -> T.Spec (Effects eff) (State siteLinks userDetails) Unit (Action siteLinks userDetails)
 spec
-  { toURI
-  , windowSizeSignal
-  , siteLinks
-  , currentPageSignal
-  , development
+  params@{siteLinks,authTokenSignal}
+  { development
   , errorMessageQueue
   , dependencies: dependencies@{authTokenQueues:{deltaIn: authTokenQueuesDeltaIn}}
   , dialog
-  , authTokenSignal
-  , userDetailsSignal
   , templateArgs: templateArgs@{palette,content,userDetails}
   , env
   , extendedNetwork
   , initFormDataRef
-  } = T.simpleSpec performAction render
+  } = T.simpleSpec (performAction <> performActionLocalCooking getLCState getLCAction) render
   where
     performAction action props state = case action of
-      ChangedCurrentPage p ->
-        void $ T.cotransform _ { currentPage = p }
-      ChangedWindowSize p ->
-        void $ T.cotransform _ { windowSize = p }
-      GotAuthToken mToken ->
-        void $ T.cotransform _ { authToken = mToken }
       Logout -> liftEff $ do
         One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
         void $ setTimeout 500 $
@@ -245,60 +195,44 @@ spec
                 unsubscribe
                 IxSignal.set Nothing authTokenSignal
                 One.putQueue errorMessageQueue (SnackbarMessageAuthFailure e)
+      _ -> pure unit
 
 
-    render :: T.Render (State siteLinks) Unit (Action siteLinks)
+    render :: T.Render (State siteLinks userDetails) Unit (Action siteLinks userDetails)
     render dispatch props state children = template $
       [ topbar
-        { toURI
-        , openLogin: unsafeCoerceEff $ dispatch AttemptLogin
-        , windowSizeSignal
-        , siteLinks
+        params
+        { openLogin: unsafeCoerceEff $ dispatch AttemptLogin
         , mobileMenuButtonSignal: writeOnly mobileMenuButtonSignal
-        , currentPageSignal
-        , authTokenSignal
-        , userDetailsSignal
         , imageSrc: templateArgs.topbar.imageSrc
         , buttons: templateArgs.topbar.buttons
         }
       ] <> mainContent <>
       [ loginDialog
+        params
         { loginDialogQueue: dialog.loginQueue
         , loginCloseQueue: dialog.loginCloseQueue
         , passwordVerifyQueues: dependencies.passwordVerifyQueues
         , errorMessageQueue: writeOnly errorMessageQueue
-        , windowSizeSignal
-        , currentPageSignal
         , toRegister: siteLinks registerLink
-        , toURI
         , env
         }
       , authenticateDialog
+        params
         { authenticateDialogQueue: dialog.authenticateQueue
         , passwordVerifyQueues: dependencies.passwordVerifyQueues
         , errorMessageQueue: writeOnly errorMessageQueue
-        , authTokenSignal
-        , windowSizeSignal
-        , currentPageSignal
-        , toURI
         , env
         }
       , privacyPolicyDialog
+        params
         { privacyPolicyDialogQueue: dialog.privacyPolicyQueue
         , errorMessageQueue: writeOnly errorMessageQueue
-        , windowSizeSignal
-        , currentPageSignal
-        , toURI
         , env
         }
       , leftMenu
+        params
         { mobileDrawerOpenSignal: readOnly mobileMenuButtonSignal
-        , siteLinks
-        , toURI
-        , windowSizeSignal
-        , authTokenSignal
-        , currentPageSignal
-        , userDetailsSignal
         , buttons: templateArgs.leftDrawer.buttons
         }
       , messages
@@ -371,14 +305,7 @@ spec
                               }
                             ]
                           , divider {}
-                          ] <> userDetails.buttons
-                                { siteLinks
-                                , currentPageSignal
-                                , windowSizeSignal
-                                , authTokenSignal
-                                , userDetailsSignal
-                                , toURI
-                                }
+                          ] <> userDetails.buttons params
                             <>
                           [ listItem
                             { button: true
@@ -395,23 +322,16 @@ spec
                     -- TODO pack currentPageSignal listener to this level, so side buttons
                     -- aren't redrawn
                     let  def =
-                          userDetails.content
-                            { siteLinks
-                            , currentPageSignal
-                            , windowSizeSignal
-                            , authTokenSignal
-                            , userDetailsSignal
-                            , toURI
-                            }
+                          userDetails.content params
                     in  case mUserDetails of
                       Just d
                         | d == userDetailsSecurityLink ->
                           [ security
+                            params
                             { env
                             , errorMessageQueue: writeOnly errorMessageQueue
                             , securityQueues: dependencies.securityQueues
                             , authenticateDialogQueue: dialog.authenticateQueue
-                            , authTokenSignal
                             , initFormDataRef
                             }
                           ]
@@ -421,24 +341,16 @@ spec
 
                 _ | state.currentPage == registerLink ->
                       [ register
+                        params
                         { registerQueues: dependencies.registerQueues
                         , errorMessageQueue: writeOnly errorMessageQueue
                         , toRoot: siteLinks rootLink
                         , env
                         , initFormDataRef
-                        , toURI
-                        , currentPageSignal
                         }
                       ]
                   | otherwise ->
-                      content
-                        { siteLinks
-                        , currentPageSignal
-                        , windowSizeSignal
-                        , authTokenSignal
-                        , userDetailsSignal
-                        , toURI
-                        }
+                      content params
             ]
           , typography
             { variant: Typography.subheading
@@ -486,15 +398,10 @@ app :: forall eff siteLinks userDetailsLinks userDetails
     => Eq siteLinks
     => ToLocation siteLinks
     => UserDetails userDetails
-    => { toURI                :: Location -> URI
-       , siteLinks            :: siteLinks -> Eff (Effects eff) Unit
-       , development          :: Boolean
+    => LocalCookingParams siteLinks userDetails (Effects eff)
+    -> { development          :: Boolean
        , env                  :: Env
        , preliminaryAuthToken :: PreliminaryAuthToken
-       , windowSizeSignal     :: IxSignal (Effects eff) WindowSize
-       , currentPageSignal    :: IxSignal (Effects eff) siteLinks
-       , authTokenSignal      :: IxSignal (Effects eff) (Maybe AuthToken)
-       , userDetailsSignal    :: IxSignal (Effects eff) (Maybe userDetails)
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
        , loginCloseQueue      :: One.Queue (write :: WRITE) (Effects eff) Unit
        , initFormDataRef      :: Ref (Maybe FacebookLoginUnsavedFormData)
@@ -506,66 +413,31 @@ app :: forall eff siteLinks userDetailsLinks userDetails
           , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
           }
        , templateArgs ::
-          { content :: { toURI :: Location -> URI
-                       , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                       , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                       , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                       , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                       , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                       } -> Array R.ReactElement
+          { content :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
           , topbar ::
             { imageSrc :: Location
-            , buttons :: { toURI :: Location -> URI
-                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                          } -> Array R.ReactElement
+            , buttons :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
             }
           , leftDrawer ::
-            { buttons :: { toURI :: Location -> URI
-                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                          } -> Array R.ReactElement
+            { buttons :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
             }
           , userDetails ::
-            { buttons :: { toURI :: Location -> URI
-                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                          } -> Array R.ReactElement
-            , content :: { toURI :: Location -> URI
-                          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                          , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-                          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                          } -> Array R.ReactElement
+            { buttons :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
+            , content :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
             }
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
           }
        , extendedNetwork :: Array R.ReactElement
        , privacyPolicyDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
        }
-    -> { spec :: R.ReactSpec Unit (State siteLinks) (Array R.ReactElement) (Effects eff)
-       , dispatcher :: R.ReactThis Unit (State siteLinks) -> (Action siteLinks) -> T.EventHandler
+    -> { spec :: R.ReactSpec Unit (State siteLinks userDetails) (Array R.ReactElement) (Effects eff)
+       , dispatcher :: R.ReactThis Unit (State siteLinks userDetails) -> (Action siteLinks userDetails) -> T.EventHandler
        }
 app
-  { toURI
-  , windowSizeSignal
-  , currentPageSignal
-  , siteLinks
-  , development
+  params
+  { development
   , preliminaryAuthToken
   , errorMessageQueue
-  , authTokenSignal
-  , userDetailsSignal
   , loginCloseQueue
   , dependencies
   , templateArgs
@@ -574,18 +446,11 @@ app
   , privacyPolicyDialogQueue
   , initFormDataRef
   } =
-  let init =
-        { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
-        , initWindowSize: unsafePerformEff $ IxSignal.get windowSizeSignal
-        }
-      {spec: reactSpec, dispatcher} =
+  let {spec: reactSpec, dispatcher} =
         T.createReactSpec
         ( spec
-          { toURI
-          , windowSizeSignal
-          , currentPageSignal
-          , siteLinks
-          , development
+          params
+          { development
           , errorMessageQueue
           , dependencies
           , dialog:
@@ -594,24 +459,18 @@ app
             , authenticateQueue: authenticateDialogQueue
             , privacyPolicyQueue: privacyPolicyDialogQueue
             }
-          , authTokenSignal
-          , userDetailsSignal
           , templateArgs
           , env
           , extendedNetwork
           , initFormDataRef
           }
-        ) (initialState init)
-      reactSpec' = Signal.whileMountedIxUUID
-                     authTokenSignal
-                     (\this x -> unsafeCoerceEff $ dispatcher this (GotAuthToken x))
-                 $ Signal.whileMountedIxUUID
-                     currentPageSignal
-                     (\this x -> unsafeCoerceEff $ dispatcher this (ChangedCurrentPage x))
-                 $ Signal.whileMountedIxUUID
-                     windowSizeSignal
-                     (\this x -> unsafeCoerceEff $ dispatcher this (ChangedWindowSize x))
-                 $ reactSpec
+        ) (initialState (unsafePerformEff (initLocalCookingState params)))
+      reactSpec' =
+          whileMountedLocalCooking
+            params
+            getLCAction
+            (\this -> unsafeCoerceEff <<< dispatcher this)
+            reactSpec
         { componentWillMount = \this -> do
           case preliminaryAuthToken of
             PreliminaryAuthToken Nothing -> pure unit

@@ -4,17 +4,14 @@ import LocalCooking.Spec.Dialogs.Generic (genericDialog)
 import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..))
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Window (WindowSize)
+import LocalCooking.Types.Params (LocalCookingParams)
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Common.Password (HashedPassword, hashPassword)
-import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues, PasswordVerifyInitIn (PasswordVerifyInitInAuth), PasswordVerifyInitOut (PasswordVerifyInitOutSuccess))
 import LocalCooking.Client.Dependencies.AuthToken (LoginFailure (BadPassword), AuthTokenFailure (AuthExistsFailure, AuthTokenLoginFailure))
 
 import Prelude
 import Data.Maybe (Maybe (..))
-import Data.URI (URI)
-import Data.URI.Location (Location)
 import Data.UUID (genUUID, GENUUID)
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff.Unsafe (unsafePerformEff)
@@ -33,9 +30,7 @@ import Queue.Types (readOnly, writeOnly)
 import Queue (WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
-import IxQueue (IxQueue)
 import IxQueue as IxQueue
-import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 
 
@@ -49,36 +44,28 @@ type Effects eff =
   | eff)
 
 
-authenticateDialog :: forall eff siteLinks userDetailsLinks
+authenticateDialog :: forall eff siteLinks userDetails userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
-            => { authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
+            => LocalCookingParams siteLinks userDetails (Effects eff)
+            -> { authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
                , passwordVerifyQueues    :: PasswordVerifySparrowClientQueues (Effects eff)
                , errorMessageQueue       :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-               , windowSizeSignal        :: IxSignal (Effects eff) WindowSize
-               , currentPageSignal       :: IxSignal (Effects eff) siteLinks
-               , authTokenSignal         :: IxSignal (Effects eff) (Maybe AuthToken)
-               , toURI                   :: Location -> URI
                , env                     :: Env
                }
             -> R.ReactElement
 authenticateDialog
+  params@{authTokenSignal}
   { authenticateDialogQueue
   , passwordVerifyQueues
   , errorMessageQueue
-  , windowSizeSignal
-  , currentPageSignal
-  , authTokenSignal
-  , toURI
   , env
   } =
   genericDialog
+  params
   { dialogQueue: authenticateDialogQueue
   , errorMessageQueue
-  , windowSizeSignal
-  , currentPageSignal
   , closeQueue: Nothing
-  , toURI
   , env
   , buttons: \_ -> []
   , title: "Authenticate"

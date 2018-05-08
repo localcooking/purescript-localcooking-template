@@ -2,20 +2,17 @@ module LocalCooking.Spec.Form.Email where
 
 import Prelude
 import Data.Maybe (Maybe (..))
-import Data.Either (Either (..))
 import Data.Generic (class Generic, gEq)
 import Text.Email.Validate (EmailAddress, emailAddress)
 import Text.Email.Validate as Email
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
-import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
-import Control.Monad.Eff.Console (log)
+import Control.Monad.Eff.Unsafe (unsafePerformEff)
 
 import Thermite as T
 import React as R
 import React.DOM as R
-import React.Queue.WhileMounted as Queue
 
 import MaterialUI.TextField (textField)
 import MaterialUI.Input as Input
@@ -24,8 +21,7 @@ import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
 import Queue.Types (allowWriting)
-import Queue (READ, WRITE)
-import Queue.One as One
+import Queue (READ)
 import IxQueue (IxQueue)
 import IxQueue as IxQueue
 

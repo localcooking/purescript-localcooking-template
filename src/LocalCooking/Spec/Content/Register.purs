@@ -7,6 +7,7 @@ import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Spec.Google.ReCaptcha (reCaptcha)
 import LocalCooking.Spec.Snackbar (SnackbarMessage (SnackbarMessageRegister), RegisterError (..))
 import LocalCooking.Types.Env (Env)
+import LocalCooking.Types.Params (LocalCookingParams)
 import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
 import LocalCooking.Links.Class (class ToLocation, toLocation)
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues, RegisterInitIn (..), RegisterInitOut (..))
@@ -18,13 +19,8 @@ import Facebook.Types (FacebookUserId)
 
 import Prelude
 import Data.Maybe (Maybe (..), isJust)
-import Data.Tuple (Tuple (..))
-import Data.Either (Either (..))
-import Data.UUID (genUUID, GENUUID)
-import Data.URI (URI)
+import Data.UUID (GENUUID)
 import Data.URI.URI (print) as URI
-import Data.URI.Location (Location)
-import Text.Email.Validate (EmailAddress)
 import Text.Email.Validate as Email
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
@@ -34,7 +30,7 @@ import Control.Monad.Eff.Ref (REF, Ref)
 import Control.Monad.Eff.Ref.Extra (takeRef)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 import Control.Monad.Eff.Exception (EXCEPTION)
-import Control.Monad.Eff.Timer (TIMER, setTimeout)
+import Control.Monad.Eff.Timer (TIMER)
 
 import Thermite as T
 import React as R
@@ -46,7 +42,6 @@ import React.Icons (facebookIcon, twitterIcon, googleIcon)
 import MaterialUI.Types (createStyles)
 import MaterialUI.Typography (typography)
 import MaterialUI.Typography as Typography
-import MaterialUI.Button as Button
 import MaterialUI.Divider (divider)
 import MaterialUI.Grid (grid)
 import MaterialUI.Grid as Grid
@@ -89,14 +84,13 @@ type Effects eff =
   | eff)
 
 
-spec :: forall eff siteLinks
+spec :: forall eff siteLinks userDetails
       . ToLocation siteLinks
-     => { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
+     => LocalCookingParams siteLinks userDetails (Effects eff)
+     -> { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
         , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
         , toRoot            :: Eff (Effects eff) Unit
         , env               :: Env
-        , toURI             :: Location -> URI
-        , currentPageSignal :: IxSignal (Effects eff) siteLinks
         , email ::
           { signal        :: IxSignal (Effects eff) Email.EmailState
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
@@ -121,6 +115,7 @@ spec :: forall eff siteLinks
         , pendingSignal            :: IxSignal (Effects eff) Boolean
         } -> T.Spec (Effects eff) State Unit Action
 spec
+  params@{toURI,currentPageSignal}
   { registerQueues
   , errorMessageQueue
   , toRoot
@@ -132,8 +127,6 @@ spec
   , password
   , passwordConfirm
   , submit
-  , toURI
-  , currentPageSignal
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
@@ -292,35 +285,32 @@ spec
         passwordConfirmErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
 
 
-register :: forall eff siteLinks
+register :: forall eff siteLinks userDetails
           . ToLocation siteLinks
-         => { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
+         => LocalCookingParams siteLinks userDetails (Effects eff)
+         -> { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
             , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
             , toRoot            :: Eff (Effects eff) Unit
             , env               :: Env
             , initFormDataRef   :: Ref (Maybe FacebookLoginUnsavedFormData)
-            , toURI             :: Location -> URI
-            , currentPageSignal :: IxSignal (Effects eff) siteLinks
             }
          -> R.ReactElement
 register
+  params
   { registerQueues
   , errorMessageQueue
   , toRoot
   , env
   , initFormDataRef
-  , toURI
-  , currentPageSignal
   } =
   let {spec: reactSpec, dispatcher} =
         T.createReactSpec
           ( spec
+            params
             { registerQueues
             , errorMessageQueue
             , toRoot
             , env
-            , toURI
-            , currentPageSignal
             , email:
               { signal: emailSignal
               , updatedQueue: emailUpdatedQueue
@@ -374,18 +364,6 @@ register
         $ Queue.whileMountedIxUUID
             passwordConfirmUpdatedQueue
             (\this _ -> submitValue this)
-        -- $ Signal.whileMountedIxUUID
-        --     emailSignal
-        --     (\this _ -> submitValue this)
-        -- $ Signal.whileMountedIxUUID
-        --     emailConfirmSignal
-        --     (\this _ -> submitValue this)
-        -- $ Signal.whileMountedIxUUID
-        --     passwordSignal
-        --     (\this _ -> submitValue this)
-        -- $ Signal.whileMountedIxUUID
-        --     passwordConfirmSignal
-        --     (\this _ -> submitValue this)
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []
   where

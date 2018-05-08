@@ -1,19 +1,16 @@
 module LocalCooking.Spec.Dialogs.PrivacyPolicy where
 
 import LocalCooking.Spec.Dialogs.Generic (genericDialog)
-import LocalCooking.Window (WindowSize)
 import LocalCooking.Links (PolicyLinks (..))
 import LocalCooking.Links.Class (toLocation, class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Spec.Snackbar (SnackbarMessage)
 import LocalCooking.Types.Env (Env)
+import LocalCooking.Types.Params (LocalCookingParams)
 
 import Prelude
-import Data.URI (URI)
 import Data.URI.URI (print) as URI
-import Data.URI.Location (Location)
 import Data.UUID (GENUUID)
 import Data.Maybe (Maybe (..))
-import Control.Monad.Eff.Unsafe (unsafePerformEff)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Exception (EXCEPTION)
 
@@ -25,8 +22,6 @@ import DOM (DOM)
 import Queue (WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
-import IxSignal.Internal (IxSignal)
-import IxSignal.Internal as IxSignal
 
 
 
@@ -39,32 +34,26 @@ type Effects eff =
 
 
 
-privacyPolicyDialog :: forall eff siteLinks userDetailsLinks
+privacyPolicyDialog :: forall eff siteLinks userDetails userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
-            => { privacyPolicyDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
+            => LocalCookingParams siteLinks userDetails (Effects eff)
+            -> { privacyPolicyDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
                , errorMessageQueue        :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-               , windowSizeSignal         :: IxSignal (Effects eff) WindowSize
-               , currentPageSignal        :: IxSignal (Effects eff) siteLinks
-               , toURI                    :: Location -> URI
                , env                      :: Env
                }
             -> R.ReactElement
 privacyPolicyDialog
+  params@{toURI}
   { privacyPolicyDialogQueue
   , errorMessageQueue
-  , windowSizeSignal
-  , currentPageSignal
-  , toURI
   , env
   } =
   genericDialog
+  params
   { dialogQueue: privacyPolicyDialogQueue
   , errorMessageQueue
-  , windowSizeSignal
-  , currentPageSignal
   , closeQueue: Nothing
-  , toURI
   , env
   , buttons: \_ -> []
   , title: "Privacy Policy"

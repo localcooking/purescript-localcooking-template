@@ -2,13 +2,14 @@ module LocalCooking.Main where
 
 import LocalCooking.Spec (app)
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Window (WindowSize, widthToWindowSize)
+import LocalCooking.Types.Params (LocalCookingParams)
+import LocalCooking.Window (widthToWindowSize)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..), UserEmailError (..))
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues, PreliminaryAuthToken (..))
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
-import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitOut, UserEmailInitIn)
+import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
 import LocalCooking.Client.Dependencies.UserRoles (UserRolesSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
@@ -26,7 +27,7 @@ import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple (..))
 import Data.Either (Either (..))
-import Data.URI (URI, Authority (..), Host (NameAddress), Scheme (..), Port (..))
+import Data.URI (Authority (..), Host (NameAddress), Scheme (..), Port (..))
 import Data.URI.Location (Location, toURI)
 import Data.String (takeWhile) as String
 import Data.Int.Parse (parseInt, toRadix)
@@ -96,47 +97,17 @@ type Effects eff =
 
 
 type LocalCookingArgs siteLinks userDetails eff =
-  { content :: { currentPageSignal :: IxSignal eff siteLinks
-               , windowSizeSignal  :: IxSignal eff WindowSize
-               , siteLinks         :: siteLinks -> Eff eff Unit
-               , toURI             :: Location -> URI
-               , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-               , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-               } -> Array ReactElement
+  { content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
   , topbar ::
     { imageSrc :: Location
-    , buttons :: { toURI             :: Location -> URI
-                 , siteLinks         :: siteLinks -> Eff eff Unit
-                 , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal  :: IxSignal eff WindowSize
-                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-                 } -> Array ReactElement
+    , buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
     }
   , leftDrawer ::
-    { buttons :: { toURI             :: Location -> URI
-                 , siteLinks         :: siteLinks -> Eff eff Unit
-                 , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal  :: IxSignal eff WindowSize
-                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-                 } -> Array ReactElement
+    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
     }
   , userDetails ::
-    { buttons :: { toURI             :: Location -> URI
-                 , siteLinks         :: siteLinks -> Eff eff Unit
-                 , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal  :: IxSignal eff WindowSize
-                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-                 } -> Array ReactElement
-    , content :: { toURI             :: Location -> URI
-                 , siteLinks         :: siteLinks -> Eff eff Unit
-                 , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal  :: IxSignal eff WindowSize
-                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-                 } -> Array ReactElement
+    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
+    , content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
     , obtain  ::
       { email :: ParAff eff (Maybe EmailAddress)
       , roles :: ParAff eff (Array UserRole)
@@ -226,13 +197,13 @@ defaultMain
   -- Privacy policy - FIXME do this at registration
   privacyPolicyDialogQueue <- OneIO.newIOQueues
   let privacyPolicyKey = StorageKey "privacypolicy"
-  mX <- getItem localStorage privacyPolicyKey
-  let x = case mX of
+  mPrivPolicy <- getItem localStorage privacyPolicyKey
+  let privPolicyUnread = case mPrivPolicy of
         Nothing -> true
         Just s -> case jsonParser s >>= decodeJson of
           Left _ -> true
           Right b -> b
-  when x $ do
+  when privPolicyUnread $ do
     let go eX = case eX of
           Right (Just _) -> do
             log "setting privacy policy..."
@@ -458,19 +429,24 @@ defaultMain
   IxSignal.subscribe userDetailsOnAuth authTokenSignal
 
 
+  let params :: LocalCookingParams siteLinks userDetails (Effects eff)
+      params =
+        { toURI : \location -> toURI {scheme, authority: Just authority, location}
+        , siteLinks : One.putQueue siteLinksSignal
+        , currentPageSignal
+        , windowSizeSignal
+        , authTokenSignal
+        , userDetailsSignal
+        }
+
   -- Run User Interface
-  let props = unit
+      props = unit
       {spec: reactSpec, dispatcher} =
         app
-          { toURI : \location -> toURI {scheme, authority: Just authority, location}
-          , windowSizeSignal
-          , currentPageSignal
-          , siteLinks: One.putQueue siteLinksSignal
-          , development: env.development
+          params
+          { development: env.development
           , preliminaryAuthToken
           , errorMessageQueue
-          , authTokenSignal
-          , userDetailsSignal
           , privacyPolicyDialogQueue
           , loginCloseQueue
           , initFormDataRef
