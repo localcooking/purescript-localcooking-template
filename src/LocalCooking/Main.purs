@@ -116,6 +116,7 @@ type LocalCookingArgs siteLinks userDetails eff =
   , deps          :: SparrowClientT eff (Eff eff) Unit
   , env           :: Env
   , initSiteLinks :: siteLinks
+  , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks
   , palette ::
     { primary   :: ColorPalette
     , secondary :: ColorPalette
@@ -145,6 +146,7 @@ defaultMain
   , initSiteLinks
   , palette
   , extendedNetwork
+  , extraRedirect
   } = do
   -- inject events
   injectTapEvent
@@ -242,7 +244,11 @@ defaultMain
               setDocumentTitle d $ defaultSiteLinksToDocumentTitle $ rootLink :: siteLinks
               pure rootLink
             _ -> pure x
-          | otherwise -> pure x
+          | otherwise -> do
+          mUserDetails <- IxSignal.get userDetailsSignal
+          case extraRedirect x mUserDetails of
+            Nothing -> pure x
+            Just y -> pure y
 
     sig <- IxSignal.make initSiteLink
 
