@@ -328,7 +328,8 @@ defaultMain
   -- rediect rules for async logout events
   let redirectOnAuth mAuth = do
         siteLink <- IxSignal.get currentPageSignal
-        let continue = One.putQueue siteLinksSignal rootLink
+        let continue = do
+              One.putQueue siteLinksSignal rootLink
         case getUserDetailsLink siteLink of
           Just _ -> case mAuth of
             Nothing -> do
