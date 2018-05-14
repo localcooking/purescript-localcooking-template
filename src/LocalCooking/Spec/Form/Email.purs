@@ -95,7 +95,7 @@ spec
       [ textField
         { label
         , fullWidth
-        , value: Input.valueString state.email
+        , value: Input.valueString "test" -- state.email
         , onChange: mkEffFn1 \e -> dispatch $ ChangedEmail (unsafeCoerce e).target.value
         , onBlur: mkEffFn1 \_ -> dispatch EmailUnfocused
         , error: case unsafePerformEff (IxSignal.get emailSignal) of
