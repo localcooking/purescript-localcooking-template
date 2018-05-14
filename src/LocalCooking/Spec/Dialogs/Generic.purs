@@ -176,11 +176,14 @@ spec
         in  dialog'
             [ dialogTitle {} [R.text title]
             , dialogContent {style: createStyles {position: "relative"}} $
-                content.component
-                { submitDisabled: \d -> IxSignal.set d submit.disabledSignal
-                , input: unsafePartial $ case state.open of
-                    Just x -> x
-                } <>
+                ( case state.open of
+                    Nothing -> [R.text ""]
+                    Just input ->
+                      content.component
+                      { submitDisabled: \d -> IxSignal.set d submit.disabledSignal
+                      , input
+                      }
+                ) <>
                   case pendingSignal of
                     Nothing -> []
                     Just p  ->
