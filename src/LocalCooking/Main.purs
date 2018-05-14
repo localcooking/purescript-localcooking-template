@@ -248,7 +248,12 @@ defaultMain
           mUserDetails <- IxSignal.get userDetailsSignal
           case extraRedirect x mUserDetails of
             Nothing -> pure x
-            Just y -> pure y
+            Just y -> do
+              void $ setTimeout 1000 $
+                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+              replaceState' y h
+              setDocumentTitle d (defaultSiteLinksToDocumentTitle y)
+              pure y
 
     sig <- IxSignal.make initSiteLink
 

@@ -44,25 +44,26 @@ import IxQueue (IxQueue)
 import IxQueue as IxQueue
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import Partial.Unsafe (unsafePartial)
 
 
 
-type State siteLinks userDetails =
-  { open         :: Boolean
+type State input siteLinks userDetails =
+  { open         :: Maybe input
   , localCooking :: LocalCookingState siteLinks userDetails
   }
 
 
-initialState :: forall siteLinks userDetails
-              . LocalCookingState siteLinks userDetails -> State siteLinks userDetails
+initialState :: forall input siteLinks userDetails
+              . LocalCookingState siteLinks userDetails -> State input siteLinks userDetails
 initialState localCooking =
-  { open: false
+  { open: Nothing
   , localCooking
   }
 
 
-data Action siteLinks userDetails
-  = Open
+data Action input siteLinks userDetails
+  = Open input
   | Close
   | Submit
   | LocalCookingAction (LocalCookingAction siteLinks userDetails)
@@ -75,18 +76,18 @@ type Effects eff =
   | eff)
 
 
-getLCState :: forall siteLinks userDetails
-            . Lens' (State siteLinks userDetails) (LocalCookingState siteLinks userDetails)
+getLCState :: forall input siteLinks userDetails
+            . Lens' (State input siteLinks userDetails) (LocalCookingState siteLinks userDetails)
 getLCState = lens (_.localCooking) (_ { localCooking = _ })
 
-getLCAction :: forall siteLinks userDetails
-             . Prism' (Action siteLinks userDetails) (LocalCookingAction siteLinks userDetails)
+getLCAction :: forall input siteLinks userDetails
+             . Prism' (Action input siteLinks userDetails) (LocalCookingAction siteLinks userDetails)
 getLCAction = prism' LocalCookingAction $ case _ of
   LocalCookingAction x -> Just x
   _ -> Nothing
 
 
-spec :: forall eff siteLinks userDetails userDetailsLinks output
+spec :: forall eff siteLinks userDetails userDetailsLinks input output
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => ToLocation siteLinks
      => LocalCookingParams siteLinks userDetails (Effects eff)
@@ -95,6 +96,7 @@ spec :: forall eff siteLinks userDetails userDetailsLinks output
         , content ::
           { component ::
             { submitDisabled :: Boolean -> Eff (Effects eff) Unit
+            , input          :: input
             } -> Array R.ReactElement
           , obtain    :: Aff (Effects eff) (Maybe output)
           , reset     :: Eff (Effects eff) Unit
@@ -110,7 +112,7 @@ spec :: forall eff siteLinks userDetails userDetailsLinks output
           }
         , pendingSignal :: Maybe (IxSignal (Effects eff) Boolean)
         }
-     -> T.Spec (Effects eff) (State siteLinks userDetails) Unit (Action siteLinks userDetails)
+     -> T.Spec (Effects eff) (State input siteLinks userDetails) Unit (Action input siteLinks userDetails)
 spec
   {toURI}
   { submit
@@ -123,12 +125,12 @@ spec
   } = T.simpleSpec (performAction <> performActionLocalCooking getLCState getLCAction) render
   where
     performAction action props state = case action of
-      Open -> void $ T.cotransform _ { open = true }
+      Open x -> void $ T.cotransform _ { open = Just x }
       Close -> do
         case pendingSignal of
           Nothing -> pure unit
           Just p  -> liftEff (IxSignal.set false p)
-        void $ T.cotransform _ { open = false }
+        void $ T.cotransform _ { open = Nothing }
         liftBase $ delay $ Milliseconds 2000.0
         liftEff content.reset
       Submit -> do
@@ -145,18 +147,22 @@ spec
             liftEff (One.putQueue dialogOutputQueue (Just output))
       _ -> pure unit
 
-    render :: T.Render (State siteLinks userDetails) Unit (Action siteLinks userDetails)
+    render :: T.Render (State input siteLinks userDetails) Unit (Action input siteLinks userDetails)
     render dispatch props state children =
       [ let dialog' =
               if state.localCooking.windowSize < Laptop
               then
                 dialog
-                  { open: state.open
+                  { open: case state.open of
+                      Nothing -> false
+                      Just _ -> true
                   , fullScreen: true
                   }
               else
                 dialog
-                  { open: state.open
+                  { open: case state.open of
+                      Nothing -> false
+                      Just _ -> true
                   , fullWidth: true
                   , onClose: mkEffFn1 \_ -> do
                       pending <- do
@@ -172,6 +178,8 @@ spec
             , dialogContent {style: createStyles {position: "relative"}} $
                 content.component
                 { submitDisabled: \d -> IxSignal.set d submit.disabledSignal
+                , input: unsafePartial $ case state.open of
+                    Just x -> x
                 } <>
                   case pendingSignal of
                     Nothing -> []
@@ -206,11 +214,11 @@ spec
 
 
 
-genericDialog :: forall eff siteLinks userDetails userDetailsLinks output
+genericDialog :: forall eff siteLinks userDetails userDetailsLinks input output
                . LocalCookingSiteLinks siteLinks userDetailsLinks
               => ToLocation siteLinks
               => LocalCookingParams siteLinks userDetails (Effects eff)
-              -> { dialogQueue       :: OneIO.IOQueues (Effects eff) Unit (Maybe output)
+              -> { dialogQueue       :: OneIO.IOQueues (Effects eff) input (Maybe output)
                  , closeQueue        :: Maybe (One.Queue (write :: WRITE) (Effects eff) Unit)
                  , buttons           ::
                     { close :: Eff (Effects eff) Unit
@@ -221,6 +229,7 @@ genericDialog :: forall eff siteLinks userDetails userDetailsLinks output
                  , content ::
                    { component ::
                      { submitDisabled :: Boolean -> Eff (Effects eff) Unit
+                     , input          :: input
                      } -> Array R.ReactElement
                    , obtain    :: Aff (Effects eff) (Maybe output)
                    , reset     :: Eff (Effects eff) Unit
@@ -261,7 +270,7 @@ genericDialog
             (\this -> unsafeCoerceEff <<< dispatcher this)
         $ Queue.whileMountedOne
             dialogInputQueue
-            (\this _ -> unsafeCoerceEff $ dispatcher this Open)
+            (\this x -> unsafeCoerceEff $ dispatcher this $ Open x)
         $ ( case closeQueue of
               Nothing -> id
               Just closeQueue' ->
