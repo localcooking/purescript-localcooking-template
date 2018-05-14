@@ -19,6 +19,7 @@ import MaterialUI.Button as Button
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import Queue.Types (allowWriting)
 import Queue (READ)
 import IxQueue (IxQueue)
 import IxQueue as IxQueue
@@ -56,7 +57,7 @@ spec {color,variant,size,style,triggerQueue} = T.simpleSpec performAction render
   where
     performAction action props state = case action of
       ChangedDisabled d -> void $ T.cotransform _ { disabled = d }
-      Clicked -> liftEff (IxQueue.broadcastIxQueue (IxQueue.allowWriting triggerQueue) unit)
+      Clicked -> liftEff (IxQueue.broadcastIxQueue (allowWriting triggerQueue) unit)
 
     render :: T.Render State Unit Action
     render dispatch props state children =

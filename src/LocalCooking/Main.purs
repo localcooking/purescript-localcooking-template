@@ -2,17 +2,20 @@ module LocalCooking.Main where
 
 import LocalCooking.Spec (app)
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Window (WindowSize, widthToWindowSize)
+import LocalCooking.Types.Params (LocalCookingParams)
+import LocalCooking.Window (widthToWindowSize)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..), UserEmailError (..))
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
 import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues, PreliminaryAuthToken (..))
 import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
-import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues, UserEmailInitOut, UserEmailInitIn)
+import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
+import LocalCooking.Client.Dependencies.UserRoles (UserRolesSparrowClientQueues)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
 import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
 import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
+import LocalCooking.Common.User.Role (UserRole)
 import LocalCooking.User (class UserDetails)
 import Facebook.State (FacebookLoginUnsavedFormData)
 
@@ -24,7 +27,7 @@ import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple (..))
 import Data.Either (Either (..))
-import Data.URI (URI, Authority (..), Host (NameAddress), Scheme (..), Port (..))
+import Data.URI (Authority (..), Host (NameAddress), Scheme (..), Port (..))
 import Data.URI.Location (Location, toURI)
 import Data.String (takeWhile) as String
 import Data.Int.Parse (parseInt, toRadix)
@@ -63,6 +66,7 @@ import IxSignal.Internal as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
 import Signal.DOM (windowDimensions)
+import Queue.Types (writeOnly)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -93,52 +97,26 @@ type Effects eff =
 
 
 type LocalCookingArgs siteLinks userDetails eff =
-  { content :: { currentPageSignal :: IxSignal eff siteLinks
-               , windowSizeSignal  :: IxSignal eff WindowSize
-               , siteLinks         :: siteLinks -> Eff eff Unit
-               , toURI             :: Location -> URI
-               , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-               , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-               } -> Array ReactElement
+  { content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
   , topbar ::
     { imageSrc :: Location
-    , buttons :: { toURI             :: Location -> URI
-                 , siteLinks         :: siteLinks -> Eff eff Unit
-                 , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal  :: IxSignal eff WindowSize
-                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-                 } -> Array ReactElement
+    , buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
     }
   , leftDrawer ::
-    { buttons :: { toURI             :: Location -> URI
-                 , siteLinks         :: siteLinks -> Eff eff Unit
-                 , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal  :: IxSignal eff WindowSize
-                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-                 } -> Array ReactElement
+    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
     }
   , userDetails ::
-    { buttons :: { toURI             :: Location -> URI
-                 , siteLinks         :: siteLinks -> Eff eff Unit
-                 , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal  :: IxSignal eff WindowSize
-                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-                 } -> Array ReactElement
-    , content :: { toURI             :: Location -> URI
-                 , siteLinks         :: siteLinks -> Eff eff Unit
-                 , currentPageSignal :: IxSignal eff siteLinks
-                 , windowSizeSignal  :: IxSignal eff WindowSize
-                 , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-                 , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-                 } -> Array ReactElement
-    , obtain  :: ParAff eff (Maybe EmailAddress) -> Aff eff (Maybe userDetails)
+    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
+    , content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
+    , obtain  ::
+      { email :: ParAff eff (Maybe EmailAddress)
+      , roles :: ParAff eff (Array UserRole)
+      } -> Aff eff (Maybe userDetails)
     }
   , deps          :: SparrowClientT eff (Eff eff) Unit
   , env           :: Env
   , initSiteLinks :: siteLinks
+  , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks
   , palette ::
     { primary   :: ColorPalette
     , secondary :: ColorPalette
@@ -168,6 +146,7 @@ defaultMain
   , initSiteLinks
   , palette
   , extendedNetwork
+  , extraRedirect
   } = do
   -- inject events
   injectTapEvent
@@ -220,13 +199,13 @@ defaultMain
   -- Privacy policy - FIXME do this at registration
   privacyPolicyDialogQueue <- OneIO.newIOQueues
   let privacyPolicyKey = StorageKey "privacypolicy"
-  mX <- getItem localStorage privacyPolicyKey
-  let x = case mX of
+  mPrivPolicy <- getItem localStorage privacyPolicyKey
+  let privPolicyUnread = case mPrivPolicy of
         Nothing -> true
         Just s -> case jsonParser s >>= decodeJson of
           Left _ -> true
           Right b -> b
-  when x $ do
+  when privPolicyUnread $ do
     let go eX = case eX of
           Right (Just _) -> do
             log "setting privacy policy..."
@@ -265,7 +244,16 @@ defaultMain
               setDocumentTitle d $ defaultSiteLinksToDocumentTitle $ rootLink :: siteLinks
               pure rootLink
             _ -> pure x
-          | otherwise -> pure x
+          | otherwise -> do
+          mUserDetails <- IxSignal.get userDetailsSignal
+          case extraRedirect x mUserDetails of
+            Nothing -> pure x
+            Just y -> do
+              void $ setTimeout 1000 $
+                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+              replaceState' y h
+              setDocumentTitle d (defaultSiteLinksToDocumentTitle y)
+              pure y
 
     sig <- IxSignal.make initSiteLink
 
@@ -333,7 +321,7 @@ defaultMain
                     One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
                   continue rootLink
             | otherwise -> continue siteLink
-    pure (One.writeOnly q)
+    pure (writeOnly q)
 
 
   onceRef <- newRef false
@@ -394,6 +382,8 @@ defaultMain
     ) <- newSparrowStaticClientQueues
   ( userEmailQueues :: UserEmailSparrowClientQueues (Effects eff)
     ) <- newSparrowStaticClientQueues
+  ( userRolesQueues :: UserRolesSparrowClientQueues (Effects eff)
+    ) <- newSparrowStaticClientQueues
   ( securityQueues :: SecuritySparrowClientQueues (Effects eff)
     ) <- newSparrowStaticClientQueues
   ( passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
@@ -402,10 +392,14 @@ defaultMain
     unpackClient (Topic ["template", "authToken"]) (sparrowClientQueues authTokenQueues)
     unpackClient (Topic ["template", "register"]) (sparrowStaticClientQueues registerQueues)
     unpackClient (Topic ["template", "userEmail"]) (sparrowStaticClientQueues userEmailQueues)
+    unpackClient (Topic ["template", "userRoles"]) (sparrowStaticClientQueues userRolesQueues)
     unpackClient (Topic ["template", "security"]) (sparrowStaticClientQueues securityQueues)
     unpackClient (Topic ["template", "passwordVerify"]) (sparrowStaticClientQueues passwordVerifyQueues)
     deps
 
+
+  ( loginCloseQueue :: One.Queue (write :: WRITE) (Effects eff) Unit
+    ) <- writeOnly <$> One.newQueue
 
   -- user details fetcher and clearer
   let userDetailsOnAuth mAuth = case mAuth of
@@ -415,38 +409,57 @@ defaultMain
                 Left _ -> do
                   IxSignal.set Nothing userDetailsSignal
                   One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
-                Right mUserDetails ->
+                Right mUserDetails -> do
                   IxSignal.set mUserDetails userDetailsSignal
-                  -- TODO send full user details
+                  One.putQueue loginCloseQueue unit
 
-          runAff_ resolve $ userDetails.obtain $ parallel $ do
-            mInitOut <- OneIO.callAsync userEmailQueues (AuthInitIn {token: authToken, subj: JSONUnit})
-            case mInitOut of
-              Nothing -> do
-                liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
-                pure Nothing
-              Just initOut -> case initOut of
-                AuthInitOut {subj: email} -> pure (Just email)
-                AuthInitOutNoAuth -> do
-                  liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
-                  pure Nothing
+          runAff_ resolve $ userDetails.obtain
+            { email: parallel $ do
+                mInitOut <- OneIO.callAsync userEmailQueues (AuthInitIn {token: authToken, subj: JSONUnit})
+                case mInitOut of
+                  Nothing -> do
+                    liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
+                    pure Nothing
+                  Just initOut -> case initOut of
+                    AuthInitOut {subj: email} -> pure (Just email)
+                    AuthInitOutNoAuth -> do
+                      liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
+                      pure Nothing
+            , roles: parallel $ do
+                mInitOut <- OneIO.callAsync userRolesQueues (AuthInitIn {token: authToken, subj: JSONUnit})
+                case mInitOut of
+                  Nothing -> do
+                    liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
+                    pure []
+                  Just initOut -> case initOut of
+                    AuthInitOut {subj: roles} -> pure roles
+                    AuthInitOutNoAuth -> do
+                      liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
+                      pure []
+            }
   IxSignal.subscribe userDetailsOnAuth authTokenSignal
 
 
+  let params :: LocalCookingParams siteLinks userDetails (Effects eff)
+      params =
+        { toURI : \location -> toURI {scheme, authority: Just authority, location}
+        , siteLinks : One.putQueue siteLinksSignal
+        , currentPageSignal
+        , windowSizeSignal
+        , authTokenSignal
+        , userDetailsSignal
+        }
+
   -- Run User Interface
-  let props = unit
+      props = unit
       {spec: reactSpec, dispatcher} =
         app
-          { toURI : \location -> toURI {scheme, authority: Just authority, location}
-          , windowSizeSignal
-          , currentPageSignal
-          , siteLinks: One.putQueue siteLinksSignal
-          , development: env.development
+          params
+          { development: env.development
           , preliminaryAuthToken
           , errorMessageQueue
-          , authTokenSignal
-          , userDetailsSignal
           , privacyPolicyDialogQueue
+          , loginCloseQueue
           , initFormDataRef
           , dependencies:
             { authTokenQueues

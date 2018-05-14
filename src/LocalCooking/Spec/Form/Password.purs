@@ -18,6 +18,7 @@ import MaterialUI.Input as Input
 import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import Queue.Types (allowWriting, allowReading)
 import Queue (READ, WRITE)
 import Queue.One as One
 import IxQueue (IxQueue)
@@ -73,7 +74,7 @@ spec
         void $ T.cotransform _ { password = e, error = false }
       PasswordUnfocused -> do
         performAction ReRender props state
-        liftEff $ IxQueue.broadcastIxQueue (IxQueue.allowWriting updatedQueue) unit
+        liftEff $ IxQueue.broadcastIxQueue (allowWriting updatedQueue) unit
       ReRender -> void $ T.cotransform _ { rerender = unit }
       Error -> void $ T.cotransform _ { error = true }
 
@@ -137,7 +138,7 @@ password
             } ) (initialState init)
       reactSpec' =
           Queue.whileMountedOne
-            (One.allowReading errorQueue)
+            (allowReading errorQueue)
             (\this _ -> unsafeCoerceEff $ dispatcher this Error)
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []

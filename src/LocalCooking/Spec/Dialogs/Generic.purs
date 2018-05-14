@@ -1,28 +1,18 @@
 module LocalCooking.Spec.Dialogs.Generic where
 
 import LocalCooking.Spec.Form.Pending (pending)
-import LocalCooking.Spec.Form.Email as Email
-import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Form.Submit as Submit
-import LocalCooking.Spec.Snackbar (SnackbarMessage (..))
+import LocalCooking.Spec.Snackbar (SnackbarMessage)
 import LocalCooking.Types.Env (Env)
+import LocalCooking.Types.Params (LocalCookingParams, LocalCookingAction, LocalCookingState, performActionLocalCooking, whileMountedLocalCooking, initLocalCookingState)
 import LocalCooking.Window (WindowSize (..))
-import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues, PasswordVerifyInitIn (PasswordVerifyInitInUnauth), PasswordVerifyInitOut (PasswordVerifyInitOutSuccess))
-import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
-import LocalCooking.Links.Class (registerLink, toLocation, class LocalCookingSiteLinks, class ToLocation)
-import Facebook.Call (FacebookLoginLink (..), facebookLoginLinkToURI)
-import Facebook.State (FacebookLoginState (..))
-import LocalCooking.Common.Password (HashedPassword, hashPassword)
+import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation)
 
 import Prelude
 import Data.Maybe (Maybe (..))
-import Data.Either (Either (..))
-import Data.URI (URI)
-import Data.URI.URI (print) as URI
-import Data.URI.Location (Location)
-import Data.UUID (genUUID, GENUUID)
+import Data.UUID (GENUUID)
 import Data.Time.Duration (Milliseconds (..))
-import Text.Email.Validate (EmailAddress)
+import Data.Lens (Lens', Prism', lens, prism')
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Aff (Aff, delay)
@@ -35,11 +25,7 @@ import Control.Monad.Eff.Class (liftEff)
 import Thermite as T
 import React as R
 import React.DOM as R
-import React.DOM.Props as RP
-import React.DOM.Props.PreventDefault (preventDefault)
 import React.Queue.WhileMounted as Queue
-import React.Signal.WhileMounted as Signal
-import React.Icons (facebookIcon, twitterIcon, googleIcon)
 import DOM (DOM)
 
 import MaterialUI.Types (createStyles)
@@ -50,6 +36,7 @@ import MaterialUI.DialogActions (dialogActions)
 import MaterialUI.Button (button)
 import MaterialUI.Button as Button
 
+import Queue.Types (readOnly, allowReading)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -57,31 +44,29 @@ import IxQueue (IxQueue)
 import IxQueue as IxQueue
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import Partial.Unsafe (unsafePartial)
 
 
 
-type State siteLinks =
-  { open        :: Boolean
-  , windowSize  :: WindowSize
-  , currentPage :: siteLinks
+type State input siteLinks userDetails =
+  { open         :: Maybe input
+  , localCooking :: LocalCookingState siteLinks userDetails
   }
 
 
-initialState :: forall siteLinks
-              . {initSiteLinks :: siteLinks, initWindowSize :: WindowSize} -> State siteLinks
-initialState {initWindowSize, initSiteLinks} =
-  { open: false
-  , windowSize: initWindowSize
-  , currentPage: initSiteLinks
+initialState :: forall input siteLinks userDetails
+              . LocalCookingState siteLinks userDetails -> State input siteLinks userDetails
+initialState localCooking =
+  { open: Nothing
+  , localCooking
   }
 
 
-data Action siteLinks
-  = Open
+data Action input siteLinks userDetails
+  = Open input
   | Close
-  | ChangedWindowSize WindowSize
-  | ChangedPage siteLinks
   | Submit
+  | LocalCookingAction (LocalCookingAction siteLinks userDetails)
 
 type Effects eff =
   ( ref       :: REF
@@ -91,16 +76,27 @@ type Effects eff =
   | eff)
 
 
-spec :: forall eff siteLinks userDetailsLinks output
+getLCState :: forall input siteLinks userDetails
+            . Lens' (State input siteLinks userDetails) (LocalCookingState siteLinks userDetails)
+getLCState = lens (_.localCooking) (_ { localCooking = _ })
+
+getLCAction :: forall input siteLinks userDetails
+             . Prism' (Action input siteLinks userDetails) (LocalCookingAction siteLinks userDetails)
+getLCAction = prism' LocalCookingAction $ case _ of
+  LocalCookingAction x -> Just x
+  _ -> Nothing
+
+
+spec :: forall eff siteLinks userDetails userDetailsLinks input output
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => ToLocation siteLinks
-     => { toURI :: Location -> URI
-        , env :: Env
-        , dialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe output)
-        , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+     => LocalCookingParams siteLinks userDetails (Effects eff)
+     -> { dialogOutputQueue :: One.Queue (write :: WRITE) (Effects eff) (Maybe output)
+        , closeQueue :: Maybe (One.Queue (write :: WRITE) (Effects eff) Unit)
         , content ::
           { component ::
             { submitDisabled :: Boolean -> Eff (Effects eff) Unit
+            , input          :: input
             } -> Array R.ReactElement
           , obtain    :: Aff (Effects eff) (Maybe output)
           , reset     :: Eff (Effects eff) Unit
@@ -116,30 +112,27 @@ spec :: forall eff siteLinks userDetailsLinks output
           }
         , pendingSignal :: Maybe (IxSignal (Effects eff) Boolean)
         }
-     -> T.Spec (Effects eff) (State siteLinks) Unit (Action siteLinks)
+     -> T.Spec (Effects eff) (State input siteLinks userDetails) Unit (Action input siteLinks userDetails)
 spec
-  { toURI
-  , env
-  , submit
+  {toURI}
+  { submit
   , content
   , pendingSignal
   , dialogOutputQueue
+  , closeQueue
   , buttons
   , title
-  , errorMessageQueue
-  } = T.simpleSpec performAction render
+  } = T.simpleSpec (performAction <> performActionLocalCooking getLCState getLCAction) render
   where
     performAction action props state = case action of
-      Open -> void $ T.cotransform _ { open = true }
+      Open x -> void $ T.cotransform _ { open = Just x }
       Close -> do
         case pendingSignal of
           Nothing -> pure unit
           Just p  -> liftEff (IxSignal.set false p)
-        void $ T.cotransform _ { open = false }
+        void $ T.cotransform _ { open = Nothing }
         liftBase $ delay $ Milliseconds 2000.0
         liftEff content.reset
-      ChangedWindowSize w -> void $ T.cotransform _ { windowSize = w }
-      ChangedPage p -> void $ T.cotransform _ { currentPage = p }
       Submit -> do
         case pendingSignal of
           Nothing -> pure unit
@@ -148,21 +141,28 @@ spec
         case mOutput of
           Nothing -> pure unit -- FIXME error out?
           Just output -> do
-            performAction Close props state
+            case closeQueue of
+              Nothing -> performAction Close props state
+              Just closeQueue' -> pure unit
             liftEff (One.putQueue dialogOutputQueue (Just output))
+      _ -> pure unit
 
-    render :: T.Render (State siteLinks) Unit (Action siteLinks)
+    render :: T.Render (State input siteLinks userDetails) Unit (Action input siteLinks userDetails)
     render dispatch props state children =
       [ let dialog' =
-              if state.windowSize < Laptop
+              if state.localCooking.windowSize < Laptop
               then
                 dialog
-                  { open: state.open
+                  { open: case state.open of
+                      Nothing -> false
+                      Just _ -> true
                   , fullScreen: true
                   }
               else
                 dialog
-                  { open: state.open
+                  { open: case state.open of
+                      Nothing -> false
+                      Just _ -> true
                   , fullWidth: true
                   , onClose: mkEffFn1 \_ -> do
                       pending <- do
@@ -176,9 +176,14 @@ spec
         in  dialog'
             [ dialogTitle {} [R.text title]
             , dialogContent {style: createStyles {position: "relative"}} $
-                content.component
-                { submitDisabled: \d -> IxSignal.set d submit.disabledSignal
-                } <>
+                ( case state.open of
+                    Nothing -> [R.text ""]
+                    Just input ->
+                      content.component
+                      { submitDisabled: \d -> IxSignal.set d submit.disabledSignal
+                      , input
+                      }
+                ) <>
                   case pendingSignal of
                     Nothing -> []
                     Just p  ->
@@ -212,15 +217,12 @@ spec
 
 
 
-genericDialog :: forall eff siteLinks userDetailsLinks output
+genericDialog :: forall eff siteLinks userDetails userDetailsLinks input output
                . LocalCookingSiteLinks siteLinks userDetailsLinks
               => ToLocation siteLinks
-              => { dialogQueue       :: OneIO.IOQueues (Effects eff) Unit (Maybe output)
-                 , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-                 , windowSizeSignal  :: IxSignal (Effects eff) WindowSize
-                 , currentPageSignal :: IxSignal (Effects eff) siteLinks
-                 , toURI             :: Location -> URI
-                 , env               :: Env
+              => LocalCookingParams siteLinks userDetails (Effects eff)
+              -> { dialogQueue       :: OneIO.IOQueues (Effects eff) input (Maybe output)
+                 , closeQueue        :: Maybe (One.Queue (write :: WRITE) (Effects eff) Unit)
                  , buttons           ::
                     { close :: Eff (Effects eff) Unit
                     } -> Array R.ReactElement
@@ -230,6 +232,7 @@ genericDialog :: forall eff siteLinks userDetailsLinks output
                  , content ::
                    { component ::
                      { submitDisabled :: Boolean -> Eff (Effects eff) Unit
+                     , input          :: input
                      } -> Array R.ReactElement
                    , obtain    :: Aff (Effects eff) (Maybe output)
                    , reset     :: Eff (Effects eff) Unit
@@ -237,28 +240,20 @@ genericDialog :: forall eff siteLinks userDetailsLinks output
                  }
               -> R.ReactElement
 genericDialog
+  params
   { dialogQueue: OneIO.IOQueues {input: dialogInputQueue, output: dialogOutputQueue}
-  , errorMessageQueue
-  , windowSizeSignal
-  , currentPageSignal
-  , toURI
-  , env
+  , closeQueue
   , content
   , submitValue
   , buttons
   , title
   , pends
   } =
-  let init =
-        { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
-        , initWindowSize: unsafePerformEff $ IxSignal.get windowSizeSignal
-        }
-      {spec: reactSpec, dispatcher} =
+  let {spec: reactSpec, dispatcher} =
         T.createReactSpec
           ( spec
-            { toURI
-            , env
-            , errorMessageQueue
+            params
+            { closeQueue
             , buttons
             , title
             , submit:
@@ -270,17 +265,22 @@ genericDialog
             , pendingSignal
             , dialogOutputQueue
             } )
-          (initialState init)
+          (initialState (unsafePerformEff (initLocalCookingState params)))
       reactSpec' =
-          Signal.whileMountedIxUUID
-            windowSizeSignal
-            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedWindowSize x))
-        $ Signal.whileMountedIxUUID
-            currentPageSignal
-            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedPage x))
+          whileMountedLocalCooking
+            params
+            getLCAction
+            (\this -> unsafeCoerceEff <<< dispatcher this)
         $ Queue.whileMountedOne
             dialogInputQueue
-            (\this _ -> unsafeCoerceEff $ dispatcher this Open)
+            (\this x -> unsafeCoerceEff $ dispatcher this $ Open x)
+        $ ( case closeQueue of
+              Nothing -> id
+              Just closeQueue' ->
+                Queue.whileMountedOne
+                  (allowReading closeQueue')
+                  (\this _ -> unsafeCoerceEff $ dispatcher this Close)
+          )
         $ Queue.whileMountedIxUUID
             submitQueue
             (\this _ -> unsafeCoerceEff $ dispatcher this Submit)
@@ -289,4 +289,4 @@ genericDialog
   where
     submitDisabledSignal = unsafePerformEff $ IxSignal.make false
     pendingSignal = if pends then unsafePerformEff (Just <$> IxSignal.make false) else Nothing
-    submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    submitQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue

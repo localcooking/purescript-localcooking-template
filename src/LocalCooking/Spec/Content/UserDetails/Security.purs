@@ -6,7 +6,7 @@ import LocalCooking.Spec.Form.Password as Password
 import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Spec.Snackbar (SnackbarMessage (SnackbarMessageSecurity), SecurityMessage (..))
 import LocalCooking.Types.Env (Env)
-import LocalCooking.Common.AccessToken.Auth (AuthToken)
+import LocalCooking.Types.Params (LocalCookingParams)
 import LocalCooking.Common.Password (HashedPassword, hashPassword)
 import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues, SecurityInitIn' (..), SecurityInitOut' (..))
 import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
@@ -15,9 +15,7 @@ import Facebook.State (FacebookLoginUnsavedFormData (FacebookLoginUnsavedFormDat
 import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple (..))
-import Data.Either (Either (..))
-import Data.UUID (genUUID, GENUUID)
-import Text.Email.Validate (EmailAddress)
+import Data.UUID (GENUUID)
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff.Ref (REF, Ref)
 import Control.Monad.Eff.Ref.Extra (takeRef)
@@ -42,6 +40,7 @@ import Crypto.Scrypt (SCRYPT)
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import Queue.Types (readOnly, writeOnly)
 import Queue (WRITE, READ)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -73,12 +72,12 @@ type Effects eff =
   | eff)
 
 
-spec :: forall eff
-      . { errorMessageQueue       :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+spec :: forall eff siteLinks userDetails
+      . LocalCookingParams siteLinks userDetails (Effects eff)
+     -> { errorMessageQueue       :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
         , env                     :: Env
         , securityQueues          :: SecuritySparrowClientQueues (Effects eff)
         , authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
-        , authTokenSignal         :: IxSignal (Effects eff) (Maybe AuthToken)
         , email ::
           { signal        :: IxSignal (Effects eff) Email.EmailState
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
@@ -102,10 +101,10 @@ spec :: forall eff
         , pendingSignal            :: IxSignal (Effects eff) Boolean
         } -> T.Spec (Effects eff) State Unit Action
 spec
+  {authTokenSignal}
   { errorMessageQueue
   , env
   , securityQueues
-  , authTokenSignal
   , authenticateDialogQueue
   , email
   , emailConfirm
@@ -170,6 +169,7 @@ spec
         , emailSignal: email.signal
         , parentSignal: Nothing
         , updatedQueue: email.updatedQueue
+        , setPartialQueue
         }
       , Email.email
         { label: R.text "Email Confirm"
@@ -179,6 +179,7 @@ spec
         , emailSignal: emailConfirm.signal
         , parentSignal: Just email.signal
         , updatedQueue: emailConfirm.updatedQueue
+        , setPartialQueue: setPartialConfirmQueue
         }
       , Password.password
         { label: R.text "Password"
@@ -213,33 +214,35 @@ spec
         }
       ]
       where
-        passwordErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
-        passwordConfirmErrorQueue = unsafePerformEff $ One.writeOnly <$> One.newQueue
+        passwordErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+        passwordConfirmErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+        setPartialQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+        setPartialConfirmQueue = unsafePerformEff $ writeOnly <$> One.newQueue
 
 
-security :: forall eff
-          . { errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-            , authTokenSignal   :: IxSignal (Effects eff) (Maybe AuthToken)
+security :: forall eff siteLinks userDetails
+          . LocalCookingParams siteLinks userDetails (Effects eff)
+         -> { errorMessageQueue       :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
             , authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
-            , securityQueues    :: SecuritySparrowClientQueues (Effects eff)
-            , env               :: Env
-            , initFormDataRef   :: Ref (Maybe FacebookLoginUnsavedFormData)
+            , securityQueues          :: SecuritySparrowClientQueues (Effects eff)
+            , env                     :: Env
+            , initFormDataRef         :: Ref (Maybe FacebookLoginUnsavedFormData)
             }
          -> R.ReactElement
 security
+  params
   { errorMessageQueue
   , authenticateDialogQueue
   , env
   , securityQueues
-  , authTokenSignal
   , initFormDataRef
   } =
   let {spec: reactSpec, dispatcher} =
         T.createReactSpec
           ( spec
+            params
             { env
             , errorMessageQueue
-            , authTokenSignal
             , authenticateDialogQueue
             , securityQueues
             , email:
@@ -324,12 +327,12 @@ security
       a <- IxSignal.make e1
       b <- IxSignal.make e2
       pure {emailSignal: a, emailConfirmSignal: b}
-    emailUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
-    emailConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    emailUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
+    emailConfirmUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     passwordSignal = unsafePerformEff (IxSignal.make "")
-    passwordUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     passwordConfirmSignal = unsafePerformEff (IxSignal.make "")
-    passwordConfirmUpdatedQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    passwordConfirmUpdatedQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     pendingSignal = unsafePerformEff (IxSignal.make false)
-    submitQueue = unsafePerformEff $ IxQueue.readOnly <$> IxQueue.newIxQueue
+    submitQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     submitDisabledSignal = unsafePerformEff (IxSignal.make true)

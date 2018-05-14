@@ -5,12 +5,10 @@ import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.Password (HashedPassword)
 
 import Prelude
-import Data.Maybe (Maybe (..))
-import Data.Argonaut (class EncodeJson, class DecodeJson, encodeJson, decodeJson, fail, (:=), (~>), jsonEmptyObject, (.?))
+import Data.Argonaut (class EncodeJson, class DecodeJson, decodeJson, fail, (:=), (~>), jsonEmptyObject)
 import Data.Generic (class Generic, gShow)
 import Text.Email.Validate (EmailAddress)
 import Text.Email.Validate as Email
-import Control.Alternative ((<|>))
 import Sparrow.Client.Queue (SparrowStaticClientQueues)
 
 

@@ -4,6 +4,7 @@ import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation, 
 import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.User (class UserDetails, getEmailAddress)
+import LocalCooking.Types.Params (LocalCookingParams, LocalCookingState, LocalCookingAction, initLocalCookingState, performActionLocalCooking, whileMountedLocalCooking)
 
 import Prelude
 import Data.URI (URI)
@@ -11,7 +12,7 @@ import Data.URI.URI (print) as URI
 import Data.URI.Location (Location)
 import Data.UUID (GENUUID)
 import Data.Maybe (Maybe (..))
-import Text.Email.Validate (EmailAddress)
+import Data.Lens (Lens', Prism', lens, prism')
 import Text.Email.Validate as Email
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
@@ -25,7 +26,6 @@ import React as R
 import React.DOM as R
 import React.DOM.Props as RP
 import React.DOM.Props.PreventDefault (preventDefault)
-import React.Signal.WhileMounted as Signal
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Toolbar (toolbar)
@@ -39,38 +39,20 @@ import MaterialUI.Icons.Menu (menuIcon)
 
 import Queue.One (WRITE, Queue, putQueue)
 import IxSignal.Internal (IxSignal)
-import IxSignal.Internal as IxSignal
 
 
 
-type State siteLinks userDetails =
-  { windowSize :: WindowSize
-  , currentPage :: siteLinks
-  , authToken :: Maybe AuthToken
-  , userDetails :: Maybe userDetails
-  }
+type State siteLinks userDetails = LocalCookingState siteLinks userDetails
 
 initialState :: forall siteLinks userDetails
-              . { initWindowSize  :: WindowSize
-                , initSiteLinks   :: siteLinks
-                , initAuthToken   :: Maybe AuthToken
-                , initUserDetails :: Maybe userDetails
-                } -> State siteLinks userDetails
-initialState {initWindowSize,initSiteLinks,initAuthToken,initUserDetails} =
-  { windowSize: initWindowSize
-  , currentPage: initSiteLinks
-  , authToken: initAuthToken
-  , userDetails: initUserDetails
-  }
+              . LocalCookingState siteLinks userDetails -> State siteLinks userDetails
+initialState = id
 
 data Action siteLinks userDetails
   = OpenLogin
   | ClickedMobileMenuButton
-  | ChangedWindowSize WindowSize
-  | ChangedCurrentPage siteLinks
-  | ChangedAuthToken (Maybe AuthToken)
-  | ChangedUserDetails (Maybe userDetails)
   | Clicked siteLinks
+  | LocalCookingAction (LocalCookingAction siteLinks userDetails)
 
 type Effects eff =
   ( ref       :: REF
@@ -78,20 +60,23 @@ type Effects eff =
   , exception :: EXCEPTION
   | eff)
 
+getLCState :: forall siteLinks userDetails. Lens' (State siteLinks userDetails) (LocalCookingState siteLinks userDetails)
+getLCState = lens id (\_ x -> x)
+
+getLCAction :: forall siteLinks userDetails. Prism' (Action siteLinks userDetails) (LocalCookingAction siteLinks userDetails)
+getLCAction = prism' LocalCookingAction $ case _ of
+  LocalCookingAction x -> Just x
+  _ -> Nothing
+
 
 spec :: forall eff siteLinks userDetailsLinks userDetails
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => Eq siteLinks
      => ToLocation siteLinks
      => UserDetails userDetails
-     => { toURI :: Location -> URI
-        , openLogin :: Eff (Effects eff) Unit
-        , siteLinks :: siteLinks -> Eff (Effects eff) Unit
+     => LocalCookingParams siteLinks userDetails (Effects eff)
+     -> { openLogin :: Eff (Effects eff) Unit
         , mobileMenuButtonSignal :: Queue (write :: WRITE) (Effects eff) Unit
-        , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-        , currentPageSignal :: IxSignal (Effects eff) siteLinks
-        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-        , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
         , imageSrc :: Location
         , buttons :: { toURI :: Location -> URI
                       , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -103,26 +88,18 @@ spec :: forall eff siteLinks userDetailsLinks userDetails
         }
      -> T.Spec (Effects eff) (State siteLinks userDetails) Unit (Action siteLinks userDetails)
 spec
-  { toURI
-  , openLogin
-  , siteLinks
+  params@{siteLinks,toURI}
+  { openLogin
   , mobileMenuButtonSignal
-  , windowSizeSignal
-  , currentPageSignal
-  , authTokenSignal
-  , userDetailsSignal
   , imageSrc
   , buttons
-  } = T.simpleSpec performAction render
+  } = T.simpleSpec (performAction <> performActionLocalCooking getLCState getLCAction) render
   where
     performAction action props state = case action of
       OpenLogin -> liftEff openLogin
       ClickedMobileMenuButton -> liftEff (putQueue mobileMenuButtonSignal unit)
-      ChangedWindowSize w -> void $ T.cotransform _ { windowSize = w }
-      ChangedCurrentPage x -> void $ T.cotransform _ { currentPage = x }
-      ChangedAuthToken x -> void $ T.cotransform _ { authToken = x }
-      ChangedUserDetails e -> void $ T.cotransform _ { userDetails = e }
       Clicked x -> liftEff (siteLinks x)
+      _ -> pure unit
 
     render :: T.Render (State siteLinks userDetails) Unit (Action siteLinks userDetails)
     render dispatch props state children =
@@ -149,14 +126,7 @@ spec
                 , href: URI.print $ toURI $ toLocation $ rootLink :: siteLinks
                 , variant: Button.flat
                 } [R.text "About"]
-              ] <> buttons
-                     { siteLinks
-                     , toURI
-                     , currentPageSignal
-                     , windowSizeSignal
-                     , authTokenSignal
-                     , userDetailsSignal
-                     }
+              ] <> buttons params
           ) <>
           [ R.div [RP.style {flex: 1, display: "flex", flexDirection: "row-reverse"}] $ case state.userDetails of
                Nothing ->
@@ -185,14 +155,9 @@ topbar :: forall eff siteLinks userDetailsLinks userDetails
        => Eq siteLinks
        => ToLocation siteLinks
        => UserDetails userDetails
-       => { toURI :: Location -> URI
-          , openLogin :: Eff (Effects eff) Unit
+       => LocalCookingParams siteLinks userDetails (Effects eff)
+       -> { openLogin :: Eff (Effects eff) Unit
           , mobileMenuButtonSignal :: Queue (write :: WRITE) (Effects eff) Unit
-          , windowSizeSignal :: IxSignal (Effects eff) WindowSize
-          , currentPageSignal :: IxSignal (Effects eff) siteLinks
-          , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-          , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-          , siteLinks :: siteLinks -> Eff (Effects eff) Unit
           , imageSrc :: Location
           , buttons :: { toURI :: Location -> URI
                         , siteLinks :: siteLinks -> Eff (Effects eff) Unit
@@ -203,50 +168,26 @@ topbar :: forall eff siteLinks userDetailsLinks userDetails
                         } -> Array R.ReactElement
           } -> R.ReactElement
 topbar
-  { toURI
-  , openLogin
-  , windowSizeSignal
-  , siteLinks
+  params
+  { openLogin
   , mobileMenuButtonSignal
-  , currentPageSignal
-  , authTokenSignal
-  , userDetailsSignal
   , imageSrc
   , buttons
   } =
-  let init =
-        { initSiteLinks: unsafePerformEff $ IxSignal.get currentPageSignal
-        , initWindowSize: unsafePerformEff $ IxSignal.get windowSizeSignal
-        , initAuthToken: unsafePerformEff $ IxSignal.get authTokenSignal
-        , initUserDetails: unsafePerformEff $ IxSignal.get userDetailsSignal
-        }
-      {spec:reactSpec,dispatcher} = T.createReactSpec
+  let {spec:reactSpec,dispatcher} = T.createReactSpec
         ( spec
-          { toURI
-          , openLogin
-          , siteLinks
-          , currentPageSignal
-          , windowSizeSignal
-          , authTokenSignal
-          , userDetailsSignal
+          params
+          { openLogin
           , mobileMenuButtonSignal
           , imageSrc
           , buttons
           }
         )
-        (initialState init)
+        (initialState (unsafePerformEff (initLocalCookingState params)))
       reactSpec' =
-          Signal.whileMountedIxUUID
-            windowSizeSignal
-            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedWindowSize x))
-        $ Signal.whileMountedIxUUID
-            currentPageSignal
-            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedCurrentPage x))
-        $ Signal.whileMountedIxUUID
-            userDetailsSignal
-            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedUserDetails x))
-        $ Signal.whileMountedIxUUID
-            authTokenSignal
-            (\this x -> unsafeCoerceEff $ dispatcher this (ChangedAuthToken x))
+          whileMountedLocalCooking
+            params
+            getLCAction
+            (\this -> unsafeCoerceEff <<< dispatcher this)
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []

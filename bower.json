@@ -7,10 +7,10 @@
     "output"
   ],
   "dependencies": {
-    "purescript-sparrow": "git@git.localcooking.com:tooling/purescript-sparrow.git#c90698b4a1e204846e6f660d839bd25a6dd2e8ce",
-    "purescript-sparrow-queue": "git@git.localcooking.com:tooling/purescript-sparrow-queue.git#944bdb26b68cbfd6805063a8c3e0007e351bff0b",
-    "purescript-localcooking-shared": "git@git.localcooking.com:localcooking/purescript-localcooking-shared.git#0896ba21ee4ca3c37133335a7312e87c9f136193",
-    "purescript-material-ui": "git://github.com/athanclark/purescript-material-ui.git#b26ac3bd1f43b4344d861e5af52259eb2eeb233f",
+    "purescript-sparrow": "git@git.localcooking.com:tooling/purescript-sparrow.git#52614fc90eb6946587865ee98c3e5f7460ea9ae2",
+    "purescript-sparrow-queue": "git@git.localcooking.com:tooling/purescript-sparrow-queue.git#06a5f374a1aa038c0541cefea7c7c4acd11e355d",
+    "purescript-localcooking-shared": "git@git.localcooking.com:localcooking/purescript-localcooking-shared.git#7c73d5d1ae76d1ed22e9e011c6dd307bb4e636eb",
+    "purescript-material-ui": "git://github.com/athanclark/purescript-material-ui.git#ec9b763f41f67846aeafe6352bfac26f5a9a4de0",
     "purescript-prelude": "^3.2.0",
     "purescript-uri": "git@git.localcooking.com:private-tooling/purescript-uri.git",
     "purescript-uri-extra": "git@git.localcooking.com:private-tooling/purescript-uri-extra.git",
@@ -22,7 +22,7 @@
     "purescript-thermite": "git://github.com/jvliwanag/purescript-thermite.git#94299d6832d92f14bef029f35d07bd5e8b062e05",
     "purescript-crypt-nacl": "git://github.com/athanclark/purescript-crypt-nacl.git#b57328882f27a9a46dcd437d89ec09ccde118d19",
     "purescript-base64": "purescript-base64-2#^1.0.1",
-    "purescript-react-queue": "^0.0.3",
+    "purescript-react-queue": "^0.0.4",
     "purescript-email-validate": "git@git.localcooking.com:private-tooling/purescript-email-validate.git#e4f1af21b595101e8f332c790b5c0437ce121d97",
     "purescript-proxy": "^2.1.0"
   },
@@ -30,7 +30,7 @@
     "purescript-psci-support": "^3.0.0"
   },
   "resolutions": {
-    "purescript-sparrow": "c90698b4a1e204846e6f660d839bd25a6dd2e8ce",
+    "purescript-sparrow": "52614fc90eb6946587865ee98c3e5f7460ea9ae2",
     "purescript-uuid": "2e563284ee5c41d75bf9010de3c4cded9f0223db",
     "purescript-arraybuffer-types": "^2.0.0",
     "purescript-zeta": "^0.0.4"
