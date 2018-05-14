@@ -8,11 +8,12 @@ import Text.Email.Validate as Email
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
-import Control.Monad.Eff.Unsafe (unsafePerformEff)
+import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
 
 import Thermite as T
 import React as R
 import React.DOM as R
+import React.Queue.WhileMounted as Queue
 
 import MaterialUI.TextField (textField)
 import MaterialUI.Input as Input
@@ -20,8 +21,8 @@ import MaterialUI.Input as Input
 import Unsafe.Coerce (unsafeCoerce)
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
-import Queue.Types (allowWriting)
-import Queue (READ)
+import Queue.Types (READ, WRITE, allowWriting, allowReading)
+import Queue.One as One
 import IxQueue (IxQueue)
 import IxQueue as IxQueue
 
@@ -115,15 +116,16 @@ spec
 
 
 email :: forall eff
-       . { label         :: R.ReactElement
-         , fullWidth     :: Boolean
-         , name          :: String
-         , id            :: String
-         , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
-         , emailSignal   :: IxSignal (Effects eff) EmailState
-         , parentSignal  :: Maybe (IxSignal (Effects eff) EmailState) --for confirm
+       . { label           :: R.ReactElement
+         , fullWidth       :: Boolean
+         , name            :: String
+         , id              :: String
+         , updatedQueue    :: IxQueue (read :: READ) (Effects eff) Unit
+         , emailSignal     :: IxSignal (Effects eff) EmailState
+         , parentSignal    :: Maybe (IxSignal (Effects eff) EmailState) --for confirm
+         , setPartialQueue :: One.Queue (write :: WRITE) (Effects eff) String
          } -> R.ReactElement
-email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal} =
+email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setPartialQueue} =
   let init =
         { initEmail: case unsafePerformEff (IxSignal.get emailSignal) of
             EmailPartial e -> e
@@ -141,4 +143,9 @@ email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal} =
             , emailSignal
             , parentSignal
             } ) (initialState init)
-  in  R.createElement (R.createClass reactSpec) unit []
+      reactSpec' =
+          Queue.whileMountedOne
+            (allowReading setPartialQueue)
+            (\this x -> unsafeCoerceEff $ dispatcher this $ ChangedEmail x)
+            reactSpec
+  in  R.createElement (R.createClass reactSpec') unit []
