@@ -342,6 +342,7 @@ spec
                         params
                         { registerQueues: dependencies.registerQueues
                         , errorMessageQueue: writeOnly errorMessageQueue
+                        , privacyPolicyQueue: dialog.privacyPolicyQueue
                         , toRoot: siteLinks rootLink
                         , env
                         , initFormDataRef
@@ -426,7 +427,6 @@ app :: forall eff siteLinks userDetailsLinks userDetails
           , palette :: {primary :: ColorPalette, secondary :: ColorPalette}
           }
        , extendedNetwork :: Array R.ReactElement
-       , privacyPolicyDialogQueue  :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
        }
     -> { spec :: R.ReactSpec Unit (State siteLinks userDetails) (Array R.ReactElement) (Effects eff)
        , dispatcher :: R.ReactThis Unit (State siteLinks userDetails) -> (Action siteLinks userDetails) -> T.EventHandler
@@ -441,7 +441,6 @@ app
   , templateArgs
   , env
   , extendedNetwork
-  , privacyPolicyDialogQueue
   , initFormDataRef
   } =
   let {spec: reactSpec, dispatcher} =
@@ -489,3 +488,6 @@ app
 
     authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
     authenticateDialogQueue = unsafePerformEff OneIO.newIOQueues
+
+    privacyPolicyDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
+    privacyPolicyDialogQueue = unsafePerformEff OneIO.newIOQueues

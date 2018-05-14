@@ -34,13 +34,12 @@ import Data.Int.Parse (parseInt, toRadix)
 import Data.UUID (GENUUID)
 import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
-import Data.Argonaut (jsonParser, decodeJson, encodeJson)
 import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Text.Email.Validate (EmailAddress)
-import Control.Monad.Aff (ParAff, Aff, runAff_, delay, parallel)
+import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, Ref, newRef, readRef, writeRef)
-import Control.Monad.Eff.Console (CONSOLE, log)
+import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Timer (TIMER, setTimeout)
 import Control.Monad.Eff.Now (NOW)
@@ -70,7 +69,7 @@ import Queue.Types (writeOnly)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Queue.One.Aff as OneIO
-import Browser.WebStorage (WEB_STORAGE, getItem, setItem, localStorage, StorageKey (..))
+import Browser.WebStorage (WEB_STORAGE)
 import WebSocket (WEBSOCKET)
 import Network.HTTP.Affjax (AJAX)
 import Crypto.Scrypt (SCRYPT)
@@ -171,13 +170,13 @@ defaultMain
 
 
 
-
   -- Fetch the preliminary auth token from `env`, or LocalStorage
   ( preliminaryAuthToken :: PreliminaryAuthToken
     ) <- map PreliminaryAuthToken $ case env.authToken of
       PreliminaryAuthToken Nothing -> map Right <$> getStoredAuthToken
       PreliminaryAuthToken (Just eErrX) -> pure (Just eErrX)
 
+  -- Mutable form data reference for first-loaded component that obtains it
   ( initFormDataRef :: Ref (Maybe FacebookLoginUnsavedFormData)
     ) <- newRef env.formData
 
@@ -195,34 +194,15 @@ defaultMain
     ) <- IxSignal.make Nothing
 
 
-
-  -- Privacy policy - FIXME do this at registration
-  privacyPolicyDialogQueue <- OneIO.newIOQueues
-  let privacyPolicyKey = StorageKey "privacypolicy"
-  mPrivPolicy <- getItem localStorage privacyPolicyKey
-  let privPolicyUnread = case mPrivPolicy of
-        Nothing -> true
-        Just s -> case jsonParser s >>= decodeJson of
-          Left _ -> true
-          Right b -> b
-  when privPolicyUnread $ do
-    let go eX = case eX of
-          Right (Just _) -> do
-            log "setting privacy policy..."
-            setItem localStorage privacyPolicyKey (show (encodeJson false))
-          _ -> log "Failure in calling privacy policy queue?"
-    runAff_ go $ do
-      liftEff $ log "Calling..."
-      delay $ Milliseconds 200.0
-      OneIO.callAsync privacyPolicyDialogQueue unit
-
-
-  -- Global current page value - for `back` compatibility while being driven by `siteLinksSignal`
+  -- Global current page value - for `back` compatibility while being driven by `siteLinksSignal` -- should be read-only
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks
     ) <- do
     initSiteLink <- do
       -- initial redirects
       let x = initSiteLinks
+          reAssign y = do
+            replaceState' y h
+            setDocumentTitle d $ defaultSiteLinksToDocumentTitle y
       case getUserDetailsLink x of
         Just _ -> do
           case preliminaryAuthToken of
@@ -230,8 +210,7 @@ defaultMain
               -- in /userDetails while not logged in
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
-              replaceState' (rootLink :: siteLinks) h
-              setDocumentTitle d $ defaultSiteLinksToDocumentTitle $ rootLink :: siteLinks
+              reAssign (rootLink :: siteLinks)
               pure rootLink
             _ -> pure x
         _ | x == registerLink -> do
@@ -240,8 +219,7 @@ defaultMain
               -- in /register while logged in
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
-              replaceState' (rootLink :: siteLinks) h
-              setDocumentTitle d $ defaultSiteLinksToDocumentTitle $ rootLink :: siteLinks
+              reAssign (rootLink :: siteLinks)
               pure rootLink
             _ -> pure x
           | otherwise -> do
@@ -250,9 +228,8 @@ defaultMain
             Nothing -> pure x
             Just y -> do
               void $ setTimeout 1000 $
-                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
-              replaceState' y h
-              setDocumentTitle d (defaultSiteLinksToDocumentTitle y)
+                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+              reAssign y
               pure y
 
     sig <- IxSignal.make initSiteLink
@@ -284,7 +261,14 @@ defaultMain
                   One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
                 replaceState' (rootLink :: siteLinks) h
                 continue rootLink
-          | otherwise -> continue siteLink
+          | otherwise -> do
+            mUserDetails <- IxSignal.get userDetailsSignal
+            case extraRedirect siteLink mUserDetails of
+              Nothing -> continue siteLink
+              Just y -> do
+                void $ setTimeout 1000 $
+                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                continue y
 
     pure sig
 
@@ -320,7 +304,14 @@ defaultMain
                   void $ setTimeout 1000 $
                     One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
                   continue rootLink
-            | otherwise -> continue siteLink
+            | otherwise -> do
+              mUserDetails <- IxSignal.get userDetailsSignal
+              case extraRedirect siteLink mUserDetails of
+                Nothing -> continue siteLink
+                Just y -> do
+                  void $ setTimeout 1000 $
+                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                  continue y
     pure (writeOnly q)
 
 
@@ -349,7 +340,14 @@ defaultMain
                   One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
                 continue
               _ -> pure unit
-            | otherwise -> pure unit
+            | otherwise -> do
+              mUserDetails <- IxSignal.get userDetailsSignal
+              case extraRedirect siteLink mUserDetails of
+                Nothing -> pure unit
+                Just y -> do
+                  void $ setTimeout 1000 $
+                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                  One.putQueue siteLinksSignal y
   IxSignal.subscribe redirectOnAuth authTokenSignal
 
   -- auth token storage and clearing on site-wide driven changes
@@ -459,7 +457,6 @@ defaultMain
           { development: env.development
           , preliminaryAuthToken
           , errorMessageQueue
-          , privacyPolicyDialogQueue
           , loginCloseQueue
           , initFormDataRef
           , dependencies:
@@ -484,4 +481,3 @@ defaultMain
           }
       component = R.createClass reactSpec
   traverse_ (render (R.createFactory component props) <<< htmlElementToElement) =<< body d
-

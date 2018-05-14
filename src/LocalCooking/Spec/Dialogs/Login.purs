@@ -124,7 +124,7 @@ loginDialog
             , emailSignal: emailSignal
             , parentSignal: Nothing
             , updatedQueue: emailQueue
-            , setPartialQueue
+            , setQueue
             }
           , Password.password
             { label: R.text "Password"
@@ -205,4 +205,4 @@ loginDialog
     emailQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     passwordQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     passwordErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
-    setPartialQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+    setQueue = unsafePerformEff $ writeOnly <$> One.newQueue

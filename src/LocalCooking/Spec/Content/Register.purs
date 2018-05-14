@@ -29,6 +29,7 @@ import Control.Monad.Eff.Console (log)
 import Control.Monad.Eff.Ref (REF, Ref)
 import Control.Monad.Eff.Ref.Extra (takeRef)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
+import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Monad.Eff.Timer (TIMER)
 
@@ -62,17 +63,20 @@ import IxQueue as IxQueue
 type State =
   { rerender :: Unit
   , fbUserId :: Maybe FacebookUserId
+  , privacyPolicy :: Boolean
   }
 
 initialState :: {initFbUserId :: Maybe FacebookUserId} -> State
 initialState {initFbUserId} =
   { rerender: unit
   , fbUserId: initFbUserId
+  , privacyPolicy: false
   }
 
 data Action
   = SubmitRegister
   | ReRender
+  | ClickedPrivacyPolicy
 
 
 type Effects eff =
@@ -87,10 +91,11 @@ type Effects eff =
 spec :: forall eff siteLinks userDetails
       . ToLocation siteLinks
      => LocalCookingParams siteLinks userDetails (Effects eff)
-     -> { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
-        , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
-        , toRoot            :: Eff (Effects eff) Unit
-        , env               :: Env
+     -> { registerQueues     :: RegisterSparrowClientQueues (Effects eff)
+        , errorMessageQueue  :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+        , privacyPolicyQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
+        , toRoot             :: Eff (Effects eff) Unit
+        , env                :: Env
         , email ::
           { signal        :: IxSignal (Effects eff) Email.EmailState
           , updatedQueue  :: IxQueue (read :: READ) (Effects eff) Unit
@@ -118,6 +123,7 @@ spec
   params@{toURI,currentPageSignal}
   { registerQueues
   , errorMessageQueue
+  , privacyPolicyQueue
   , toRoot
   , env
   , reCaptchaSignal
@@ -131,6 +137,11 @@ spec
   where
     performAction action props state = case action of
       ReRender -> void $ T.cotransform _ {rerender = unit}
+      ClickedPrivacyPolicy -> do
+        mX <- liftBase (OneIO.callAsync privacyPolicyQueue unit)
+        case mX of
+          Nothing -> pure unit
+          Just _ -> void $ T.cotransform _ {privacyPolicy = true}
       SubmitRegister -> do
         liftEff $ IxSignal.set true pendingSignal
         mEmail <- liftEff $ IxSignal.get email.signal
@@ -188,7 +199,7 @@ spec
             , emailSignal: email.signal
             , parentSignal: Nothing
             , updatedQueue: email.updatedQueue
-            , setPartialQueue
+            , setQueue
             }
           , Email.email
             { label: R.text "Email Confirm"
@@ -198,7 +209,7 @@ spec
             , emailSignal: emailConfirm.signal
             , parentSignal: Just email.signal
             , updatedQueue: emailConfirm.updatedQueue
-            , setPartialQueue: setPartialConfirmQueue
+            , setQueue: setConfirmQueue
             }
           , Password.password
             { label: R.text "Password"
@@ -268,6 +279,11 @@ spec
             { reCaptchaSignal
             , env
             }
+          , button
+            { variant: Button.raised
+            , disabled: state.privacyPolicy
+            , onTouchTap: mkEffFn1 \_ -> dispatch ClickedPrivacyPolicy
+            } [R.text "Privacy Policy"]
           , Submit.submit
             { color: Button.secondary
             , variant: Button.raised
@@ -285,8 +301,8 @@ spec
       where
         passwordErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
         passwordConfirmErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
-        setPartialQueue = unsafePerformEff $ writeOnly <$> One.newQueue
-        setPartialConfirmQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+        setQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+        setConfirmQueue = unsafePerformEff $ writeOnly <$> One.newQueue
 
 
 register :: forall eff siteLinks userDetails
@@ -294,6 +310,7 @@ register :: forall eff siteLinks userDetails
          => LocalCookingParams siteLinks userDetails (Effects eff)
          -> { registerQueues    :: RegisterSparrowClientQueues (Effects eff)
             , errorMessageQueue :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
+            , privacyPolicyQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe Unit)
             , toRoot            :: Eff (Effects eff) Unit
             , env               :: Env
             , initFormDataRef   :: Ref (Maybe FacebookLoginUnsavedFormData)
@@ -303,6 +320,7 @@ register
   params
   { registerQueues
   , errorMessageQueue
+  , privacyPolicyQueue
   , toRoot
   , env
   , initFormDataRef
@@ -313,6 +331,7 @@ register
             params
             { registerQueues
             , errorMessageQueue
+            , privacyPolicyQueue
             , toRoot
             , env
             , email:
@@ -348,7 +367,8 @@ register
               then pure true
               else do
                 p2 <- IxSignal.get passwordConfirmSignal
-                pure (mEmail /= confirm || p1 /= p2)
+                {privacyPolicy} <- unsafeCoerceEff (R.readState this)
+                pure (mEmail /= confirm || p1 /= p2 || not privacyPolicy)
           _ -> pure true
         IxSignal.set x submitDisabledSignal
         unsafeCoerceEff $ dispatcher this ReRender

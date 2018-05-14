@@ -7,8 +7,8 @@
     "output"
   ],
   "dependencies": {
-    "purescript-sparrow": "git@git.localcooking.com:tooling/purescript-sparrow.git#52614fc90eb6946587865ee98c3e5f7460ea9ae2",
-    "purescript-sparrow-queue": "git@git.localcooking.com:tooling/purescript-sparrow-queue.git#06a5f374a1aa038c0541cefea7c7c4acd11e355d",
+    "purescript-sparrow": "git@git.localcooking.com:tooling/purescript-sparrow.git#c29eb4ccecaebe3885749cef053d1e2f19437d53",
+    "purescript-sparrow-queue": "git@git.localcooking.com:tooling/purescript-sparrow-queue.git#c99dd5cfa80553329fb396469002bd1f01b5b7bc",
     "purescript-localcooking-shared": "git@git.localcooking.com:localcooking/purescript-localcooking-shared.git#7c73d5d1ae76d1ed22e9e011c6dd307bb4e636eb",
     "purescript-material-ui": "git://github.com/athanclark/purescript-material-ui.git#ec9b763f41f67846aeafe6352bfac26f5a9a4de0",
     "purescript-prelude": "^3.2.0",
@@ -16,13 +16,13 @@
     "purescript-uri-extra": "git@git.localcooking.com:private-tooling/purescript-uri-extra.git",
     "purescript-console": "^3.0.0",
     "purescript-react": "^5.1.0",
-    "purescript-zeta": "^0.0.6",
+    "purescript-zeta": "^1.0.0",
     "purescript-webstorage": "^4.0.0",
     "purescript-parseint": "^0.0.0",
     "purescript-thermite": "git://github.com/jvliwanag/purescript-thermite.git#94299d6832d92f14bef029f35d07bd5e8b062e05",
     "purescript-crypt-nacl": "git://github.com/athanclark/purescript-crypt-nacl.git#b57328882f27a9a46dcd437d89ec09ccde118d19",
     "purescript-base64": "purescript-base64-2#^1.0.1",
-    "purescript-react-queue": "^0.0.4",
+    "purescript-react-queue": "^0.0.5",
     "purescript-email-validate": "git@git.localcooking.com:private-tooling/purescript-email-validate.git#e4f1af21b595101e8f332c790b5c0437ce121d97",
     "purescript-proxy": "^2.1.0"
   },
@@ -30,7 +30,7 @@
     "purescript-psci-support": "^3.0.0"
   },
   "resolutions": {
-    "purescript-sparrow": "52614fc90eb6946587865ee98c3e5f7460ea9ae2",
+    "purescript-sparrow": "c29eb4ccecaebe3885749cef053d1e2f19437d53",
     "purescript-uuid": "2e563284ee5c41d75bf9010de3c4cded9f0223db",
     "purescript-arraybuffer-types": "^2.0.0",
     "purescript-zeta": "^0.0.4"

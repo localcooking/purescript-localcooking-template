@@ -169,7 +169,7 @@ spec
         , emailSignal: email.signal
         , parentSignal: Nothing
         , updatedQueue: email.updatedQueue
-        , setPartialQueue
+        , setQueue
         }
       , Email.email
         { label: R.text "Email Confirm"
@@ -179,7 +179,7 @@ spec
         , emailSignal: emailConfirm.signal
         , parentSignal: Just email.signal
         , updatedQueue: emailConfirm.updatedQueue
-        , setPartialQueue: setPartialConfirmQueue
+        , setQueue: setConfirmQueue
         }
       , Password.password
         { label: R.text "Password"
@@ -216,8 +216,8 @@ spec
       where
         passwordErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
         passwordConfirmErrorQueue = unsafePerformEff $ writeOnly <$> One.newQueue
-        setPartialQueue = unsafePerformEff $ writeOnly <$> One.newQueue
-        setPartialConfirmQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+        setQueue = unsafePerformEff $ writeOnly <$> One.newQueue
+        setConfirmQueue = unsafePerformEff $ writeOnly <$> One.newQueue
 
 
 security :: forall eff siteLinks userDetails

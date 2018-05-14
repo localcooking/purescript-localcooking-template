@@ -41,6 +41,7 @@ initialState {initEmail} =
 
 data Action
   = ChangedEmail String
+  | SetEmail EmailState
   | EmailUnfocused
   | ReRender
 
@@ -81,8 +82,17 @@ spec
   where
     performAction action props state = case action of
       ChangedEmail e -> do
-        liftEff $ IxSignal.set (EmailPartial e) emailSignal
+        liftEff (IxSignal.set (EmailPartial e) emailSignal)
         void $ T.cotransform _ { email = e }
+      SetEmail x -> do
+        liftEff (IxSignal.set x emailSignal)
+        void $ T.cotransform _ { email = case x of
+                                    EmailPartial y -> y
+                                    EmailBad y -> y
+                                    EmailGood y -> Email.toString y
+                               }
+        performAction ReRender props state
+        liftEff $ IxQueue.broadcastIxQueue (allowWriting updatedQueue) unit
       EmailUnfocused -> do
         liftEff $ case emailAddress state.email of
           Nothing -> IxSignal.set (EmailBad state.email) emailSignal
@@ -116,16 +126,16 @@ spec
 
 
 email :: forall eff
-       . { label           :: R.ReactElement
-         , fullWidth       :: Boolean
-         , name            :: String
-         , id              :: String
-         , updatedQueue    :: IxQueue (read :: READ) (Effects eff) Unit
-         , emailSignal     :: IxSignal (Effects eff) EmailState
-         , parentSignal    :: Maybe (IxSignal (Effects eff) EmailState) --for confirm
-         , setPartialQueue :: One.Queue (write :: WRITE) (Effects eff) String
+       . { label        :: R.ReactElement
+         , fullWidth    :: Boolean
+         , name         :: String
+         , id           :: String
+         , updatedQueue :: IxQueue (read :: READ) (Effects eff) Unit
+         , emailSignal  :: IxSignal (Effects eff) EmailState
+         , parentSignal :: Maybe (IxSignal (Effects eff) EmailState) --for confirm
+         , setQueue     :: One.Queue (write :: WRITE) (Effects eff) EmailState
          } -> R.ReactElement
-email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setPartialQueue} =
+email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setQueue} =
   let init =
         { initEmail: case unsafePerformEff (IxSignal.get emailSignal) of
             EmailPartial e -> e
@@ -145,10 +155,7 @@ email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setPartialQ
             } ) (initialState init)
       reactSpec' =
           Queue.whileMountedOne
-            (allowReading setPartialQueue)
-            (\this x -> do
-                unsafeCoerceEff $ dispatcher this $ ChangedEmail x
-                unsafeCoerceEff $ IxQueue.broadcastIxQueue (allowWriting updatedQueue) unit
-            )
+            (allowReading setQueue)
+            (\this x -> unsafeCoerceEff $ dispatcher this $ SetEmail x)
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []
