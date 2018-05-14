@@ -146,6 +146,9 @@ email {label,fullWidth,name,id,updatedQueue,emailSignal,parentSignal,setPartialQ
       reactSpec' =
           Queue.whileMountedOne
             (allowReading setPartialQueue)
-            (\this x -> unsafeCoerceEff $ dispatcher this $ ChangedEmail x)
+            (\this x -> do
+                unsafeCoerceEff $ dispatcher this $ ChangedEmail x
+                unsafeCoerceEff $ IxQueue.broadcastIxQueue (allowWriting updatedQueue) unit
+            )
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []
