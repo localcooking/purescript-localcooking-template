@@ -144,10 +144,10 @@ spec
           Just _ -> void $ T.cotransform _ {privacyPolicy = true}
       SubmitRegister -> do
         liftEff $ IxSignal.set true pendingSignal
-        mEmail <- liftEff $ IxSignal.get email.signal
+        mEmail <- liftEff (IxSignal.get email.signal)
         case mEmail of
           Email.EmailGood email -> do
-            mReCaptcha <- liftEff $ IxSignal.get reCaptchaSignal
+            mReCaptcha <- liftEff (IxSignal.get reCaptchaSignal)
             case mReCaptcha of
               Just reCaptcha -> do
                 passwordString <- liftEff (IxSignal.get password.signal)
@@ -156,7 +156,7 @@ spec
                     { password: passwordString
                     , salt: env.salt
                     }
-                  OneIO.callAsync registerQueues $ RegisterInitIn {email,password,reCaptcha}
+                  OneIO.callAsync registerQueues (RegisterInitIn {email,password,reCaptcha})
                 liftEff $ do
                   case mErr of
                     Nothing -> pure unit

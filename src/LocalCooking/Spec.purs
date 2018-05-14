@@ -319,9 +319,7 @@ spec
                   , R.div [RP.style {position: "absolute", left: "216px", top: "1em", paddingLeft: "1em"}] $
                     -- TODO pack currentPageSignal listener to this level, so side buttons
                     -- aren't redrawn
-                    let  def =
-                          userDetails.content params
-                    in  case mUserDetails of
+                    case mUserDetails of
                       Just d
                         | d == userDetailsSecurityLink ->
                           [ security
@@ -333,8 +331,8 @@ spec
                             , initFormDataRef
                             }
                           ]
-                        | otherwise -> def
-                      _ -> def
+                        | otherwise -> userDetails.content params
+                      _ -> userDetails.content params
                   ]
 
                 _ | state.currentPage == registerLink ->
@@ -467,19 +465,19 @@ app
             params
             getLCAction
             (\this -> unsafeCoerceEff <<< dispatcher this)
-            reactSpec
-        { componentWillMount = \this -> do
-          case preliminaryAuthToken of
-            PreliminaryAuthToken Nothing -> pure unit
-            PreliminaryAuthToken (Just eErr) -> case eErr of
-              -- Call the authToken resource when the spec starts, using the preliminary auth token
-              Right prescribedAuthToken ->
-                unsafeCoerceEff $ dispatcher this $ CallAuthToken $
-                  AuthTokenInitInExists {exists: prescribedAuthToken}
-              Left e ->
-                unsafeCoerceEff $ One.putQueue errorMessageQueue $ SnackbarMessageAuthFailure e
-          reactSpec.componentWillMount this
-        }
+          $ reactSpec
+            { componentWillMount = \this -> do
+              case preliminaryAuthToken of
+                PreliminaryAuthToken Nothing -> pure unit
+                PreliminaryAuthToken (Just eErr) -> case eErr of
+                  -- Call the authToken resource when the spec starts, using the preliminary auth token
+                  Right prescribedAuthToken ->
+                    unsafeCoerceEff $ dispatcher this $ CallAuthToken $
+                      AuthTokenInitInExists {exists: prescribedAuthToken}
+                  Left e ->
+                    unsafeCoerceEff $ One.putQueue errorMessageQueue $ SnackbarMessageAuthFailure e
+              reactSpec.componentWillMount this
+            }
 
   in  {spec: reactSpec', dispatcher}
   where
