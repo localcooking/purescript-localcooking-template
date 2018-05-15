@@ -65,14 +65,12 @@ import IxQueue as IxQueue
 type State =
   { rerender :: Unit
   , fbUserId :: Maybe FacebookUserId
-  , privacyPolicy :: Boolean
   }
 
 initialState :: {initFbUserId :: Maybe FacebookUserId} -> State
 initialState {initFbUserId} =
   { rerender: unit
   , fbUserId: initFbUserId
-  , privacyPolicy: false
   }
 
 data Action
@@ -119,6 +117,10 @@ spec :: forall eff siteLinks userDetails
           { queue          :: IxQueue (read :: READ) (Effects eff) Unit
           , disabledSignal :: IxSignal (Effects eff) Boolean
           }
+        , privacy ::
+          { queue          :: IxQueue (read :: READ) (Effects eff) Unit
+          , disabledSignal :: IxSignal (Effects eff) Boolean
+          }
         , reCaptchaSignal          :: IxSignal (Effects eff) (Maybe ReCaptchaResponse)
         , pendingSignal            :: IxSignal (Effects eff) Boolean
         } -> T.Spec (Effects eff) State Unit Action
@@ -136,6 +138,7 @@ spec
   , password
   , passwordConfirm
   , submit
+  , privacy
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
@@ -144,10 +147,7 @@ spec
         mX <- liftBase (OneIO.callAsync privacyPolicyQueue unit)
         case mX of
           Nothing -> liftEff $ log "Privacy policy denied?"
-          Just _ -> do
-            void $ T.cotransform _ {privacyPolicy = true}
-            liftBase $ delay $ Milliseconds 200.0
-            performAction ReRender props state
+          Just _ -> liftEff $ IxSignal.set true privacy.disabledSignal
       SubmitRegister -> do
         liftEff $ IxSignal.set true pendingSignal
         mEmail <- liftEff (IxSignal.get email.signal)
@@ -285,10 +285,13 @@ spec
             { reCaptchaSignal
             , env
             }
-          , button
-            { variant: Button.raised
-            , disabled: state.privacyPolicy
-            , onTouchTap: mkEffFn1 \_ -> dispatch ClickedPrivacyPolicy
+          , Submit.submit
+            { color: Button.default
+            , variant: Button.raised
+            , size: Button.large
+            , style: createStyles {}
+            , disabledSignal: privacy.disabledSignal
+            , triggerQueue: privacy.queue
             } [R.text "Privacy Policy"]
           , R.br [] []
           , Submit.submit
@@ -361,6 +364,10 @@ register
               { queue: submitQueue
               , disabledSignal: submitDisabledSignal
               }
+            , privacy:
+              { queue: privacyQueue
+              , disabledSignal: privacyDisabledSignal
+              }
             , reCaptchaSignal
             , pendingSignal
             } ) (initialState {initFbUserId: fbUserId})
@@ -374,7 +381,7 @@ register
               then pure true
               else do
                 p2 <- IxSignal.get passwordConfirmSignal
-                {privacyPolicy} <- unsafeCoerceEff (R.readState this)
+                privacyPolicy <- IxSignal.get privacyDisabledSignal
                 pure (mEmail /= confirm || p1 /= p2 || not privacyPolicy)
           _ -> pure true
         IxSignal.set x submitDisabledSignal
@@ -383,6 +390,10 @@ register
             submitQueue
             "onSubmit"
             (\this _ -> unsafeCoerceEff $ dispatcher this SubmitRegister)
+        $ Queue.whileMountedIx
+            privacyQueue
+            "onPrivacy"
+            (\this _ -> unsafeCoerceEff $ dispatcher this ClickedPrivacyPolicy)
         $ Queue.whileMountedIx
             emailUpdatedQueue
             "emailUpdated"
@@ -435,3 +446,5 @@ register
     pendingSignal = unsafePerformEff (IxSignal.make false)
     submitQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     submitDisabledSignal = unsafePerformEff (IxSignal.make true)
+    privacyQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
+    privacyDisabledSignal = unsafePerformEff (IxSignal.make false)
