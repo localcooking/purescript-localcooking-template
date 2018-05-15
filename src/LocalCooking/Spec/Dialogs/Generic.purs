@@ -139,7 +139,10 @@ spec
           Just p -> liftEff (IxSignal.set true p)
         mOutput <- liftBase content.obtain
         case mOutput of
-          Nothing -> pure unit -- FIXME error out?
+          Nothing ->
+            case pendingSignal of
+              Nothing -> pure unit
+              Just p -> liftEff (IxSignal.set false p)
           Just output -> do
             liftEff (One.putQueue dialogOutputQueue (Just output))
             case closeQueue of
