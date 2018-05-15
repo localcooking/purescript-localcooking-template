@@ -170,10 +170,11 @@ spec
   where
     performAction action props state = case action of
       Logout -> liftEff $ do
+        siteLinks rootLink
         One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
         void $ setTimeout 500 $
           One.putQueue errorMessageQueue $ SnackbarMessageRedirect RedirectLogout
-        IxSignal.set Nothing authTokenSignal
+        -- IxSignal.set Nothing authTokenSignal
       AttemptLogin -> do
         mEmailPassword <- liftBase (OneIO.callAsync dialog.loginQueue unit)
         case mEmailPassword of
