@@ -378,7 +378,6 @@ register
                 pure (mEmail /= confirm || p1 /= p2 || not privacyPolicy)
           _ -> pure true
         IxSignal.set x submitDisabledSignal
-        unsafeCoerceEff $ dispatcher this ReRender
       reactSpec' =
           Queue.whileMountedIxUUID
             submitQueue
