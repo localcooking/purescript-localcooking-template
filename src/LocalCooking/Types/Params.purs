@@ -91,6 +91,7 @@ performActionLocalCooking getLCState a props state =
 
 whileMountedLocalCooking :: forall siteLinks userDetails eff state action props render
                           . LocalCookingParams siteLinks userDetails (Effects eff)
+                         -> String
                          -> (LocalCookingAction siteLinks userDetails -> action)
                          -> (ReactThis props state -> action -> Eff (Effects eff) Unit)
                          -> ReactSpec props state render (Effects eff)
@@ -101,19 +102,24 @@ whileMountedLocalCooking
   , authTokenSignal
   , userDetailsSignal
   }
+  k
   buildLCAction
   dispatcher
   reactSpec
-  = Signal.whileMountedIxUUID
+  = Signal.whileMountedIx
       currentPageSignal
+      k
       (\this x -> dispatcher this (buildLCAction (ChangedCurrentPage x)))
-  $ Signal.whileMountedIxUUID
+  $ Signal.whileMountedIx
       windowSizeSignal
+      k
       (\this x -> dispatcher this (buildLCAction (ChangedWindowSize x)))
-  $ Signal.whileMountedIxUUID
+  $ Signal.whileMountedIx
       authTokenSignal
+      k
       (\this x -> dispatcher this (buildLCAction (ChangedAuthToken x)))
-  $ Signal.whileMountedIxUUID
+  $ Signal.whileMountedIx
       userDetailsSignal
+      k
       (\this x -> dispatcher this (buildLCAction (ChangedUserDetails x)))
       reactSpec

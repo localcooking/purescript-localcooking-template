@@ -379,20 +379,25 @@ register
           _ -> pure true
         IxSignal.set x submitDisabledSignal
       reactSpec' =
-          Queue.whileMountedIxUUID
+          Queue.whileMountedIx
             submitQueue
+            "onSubmit"
             (\this _ -> unsafeCoerceEff $ dispatcher this SubmitRegister)
-        $ Queue.whileMountedIxUUID
+        $ Queue.whileMountedIx
             emailUpdatedQueue
+            "emailUpdated"
             (\this _ -> submitValue this)
-        $ Queue.whileMountedIxUUID
+        $ Queue.whileMountedIx
             emailConfirmUpdatedQueue
+            "emailConfirmUpdated"
             (\this _ -> submitValue this)
-        $ Queue.whileMountedIxUUID
+        $ Queue.whileMountedIx
             passwordUpdatedQueue
+            "passwordUpdated"
             (\this _ -> submitValue this)
-        $ Queue.whileMountedIxUUID
+        $ Queue.whileMountedIx
             passwordConfirmUpdatedQueue
+            "passwordConfirmUpdated"
             (\this _ -> submitValue this)
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []

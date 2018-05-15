@@ -469,6 +469,7 @@ app
       reactSpec' =
           whileMountedLocalCooking
             params
+            "LocalCooking.Spec"
             LocalCookingAction
             (\this -> unsafeCoerceEff <<< dispatcher this)
           $ reactSpec

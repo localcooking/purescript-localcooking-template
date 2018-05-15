@@ -149,6 +149,7 @@ leftMenu
       reactSpecLogin =
           whileMountedLocalCooking
             params
+            "LocalCooking.Drawers.LeftMenu"
             LocalCookingAction
             (\this -> unsafeCoerceEff <<< dispatcher this)
         $ Queue.whileMountedOne

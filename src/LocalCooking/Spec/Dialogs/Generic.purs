@@ -269,6 +269,7 @@ genericDialog
       reactSpec' =
           whileMountedLocalCooking
             params
+            "LocalCooking.Spec.Dialogs.Generic"
             LocalCookingAction
             (\this -> unsafeCoerceEff <<< dispatcher this)
         $ Queue.whileMountedOne
@@ -281,8 +282,9 @@ genericDialog
                   (allowReading closeQueue')
                   (\this _ -> unsafeCoerceEff $ dispatcher this Close)
           )
-        $ Queue.whileMountedIxUUID
+        $ Queue.whileMountedIx
             submitQueue
+            "onSubmit"
             (\this _ -> unsafeCoerceEff $ dispatcher this Submit)
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []

@@ -283,32 +283,25 @@ security
         IxSignal.set x submitDisabledSignal
         unsafeCoerceEff $ dispatcher this ReRender
       reactSpec' =
-          Queue.whileMountedIxUUID
+          Queue.whileMountedIx
             submitQueue
+            "onSubmit"
             (\this _ -> unsafeCoerceEff $ dispatcher this SubmitSecurity)
-        $ Queue.whileMountedIxUUID
+        $ Queue.whileMountedIx
             emailUpdatedQueue
+            "emailUpdated"
             (\this _ -> submitValue this)
-        $ Queue.whileMountedIxUUID
+        $ Queue.whileMountedIx
             emailConfirmUpdatedQueue
+            "emailConfirmUpdated"
             (\this _ -> submitValue this)
-        $ Queue.whileMountedIxUUID
+        $ Queue.whileMountedIx
             passwordUpdatedQueue
+            "passwordUpdated"
             (\this _ -> submitValue this)
-        $ Queue.whileMountedIxUUID
+        $ Queue.whileMountedIx
             passwordConfirmUpdatedQueue
-            (\this _ -> submitValue this)
-        $ Signal.whileMountedIxUUID
-            emailSignal
-            (\this _ -> submitValue this)
-        $ Signal.whileMountedIxUUID
-            emailConfirmSignal
-            (\this _ -> submitValue this)
-        $ Signal.whileMountedIxUUID
-            passwordSignal
-            (\this _ -> submitValue this)
-        $ Signal.whileMountedIxUUID
-            passwordConfirmSignal
+            "passwordConfirmUpdated"
             (\this _ -> submitValue this)
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []

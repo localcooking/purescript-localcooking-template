@@ -87,8 +87,9 @@ submit {disabledSignal,color,variant,size,style,triggerQueue} =
       {spec: reactSpec, dispatcher} =
         T.createReactSpec (spec {color,variant,size,style,triggerQueue}) (initialState init)
       reactSpec' =
-          Signal.whileMountedIxUUID
+          Signal.whileMountedIx
             disabledSignal
+            "Submit"
             (\this x -> unsafeCoerceEff $ dispatcher this (ChangedDisabled x))
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit

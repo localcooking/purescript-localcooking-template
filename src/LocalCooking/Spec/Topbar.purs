@@ -187,6 +187,7 @@ topbar
       reactSpec' =
           whileMountedLocalCooking
             params
+            "LocalCooking.Spec.Topbar"
             LocalCookingAction
             (\this -> unsafeCoerceEff <<< dispatcher this)
             reactSpec
