@@ -141,10 +141,10 @@ spec
         case mOutput of
           Nothing -> pure unit -- FIXME error out?
           Just output -> do
+            liftEff (One.putQueue dialogOutputQueue (Just output))
             case closeQueue of
               Nothing -> performAction Close props state
               Just closeQueue' -> pure unit
-            liftEff (One.putQueue dialogOutputQueue (Just output))
       LocalCookingAction a -> performActionLocalCooking getLCState a props state
 
     render :: T.Render (State input siteLinks userDetails) Unit (Action input siteLinks userDetails)

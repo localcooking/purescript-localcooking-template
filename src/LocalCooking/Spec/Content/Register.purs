@@ -54,7 +54,7 @@ import Crypto.Scrypt (SCRYPT)
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
-import Queue.Types (readOnly, writeOnly)
+import Queue.Types (readOnly, writeOnly, allowWriting)
 import Queue (WRITE, READ)
 import Queue.One as One
 import Queue.One.Aff as OneIO
@@ -147,7 +147,9 @@ spec
         mX <- liftBase (OneIO.callAsync privacyPolicyQueue unit)
         case mX of
           Nothing -> liftEff $ log "Privacy policy denied?"
-          Just _ -> liftEff $ IxSignal.set true privacy.disabledSignal
+          Just _ -> liftEff $ do
+            IxSignal.set true privacy.disabledSignal
+            IxQueue.broadcastIxQueue (allowWriting password.updatedQueue) unit
       SubmitRegister -> do
         liftEff $ IxSignal.set true pendingSignal
         mEmail <- liftEff (IxSignal.get email.signal)
