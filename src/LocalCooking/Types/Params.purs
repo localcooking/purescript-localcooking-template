@@ -10,6 +10,7 @@ import Data.URI.URI (URI)
 import Data.URI.Location (Location)
 import Data.Lens (Lens', Prism', review, clonePrism, matching, (%~))
 import Data.UUID (GENUUID)
+import Data.Generic (class Generic, gShow)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Ref (REF)
 import Control.Monad.Eff.Exception (EXCEPTION)
@@ -62,6 +63,11 @@ data LocalCookingAction siteLinks userDetails
   | ChangedAuthToken (Maybe AuthToken)
   | ChangedUserDetails (Maybe userDetails)
 
+derive instance genericLocalCookingAction :: (Generic siteLinks, Generic userDetails) => Generic (LocalCookingAction siteLinks userDetails)
+
+instance showLocalCookingAction :: (Generic siteLinks, Generic userDetails) => Show (LocalCookingAction siteLinks userDetails) where
+  show = gShow
+
 
 type Effects eff =
   ( ref :: REF
@@ -72,23 +78,20 @@ type Effects eff =
 
 performActionLocalCooking :: forall siteLinks userDetails eff state action props
                            . Lens' state (LocalCookingState siteLinks userDetails)
-                          -> Prism' action (LocalCookingAction siteLinks userDetails)
-                          -> T.PerformAction eff state props action
-performActionLocalCooking getLCState getLCAction action props state =
+                          -> T.PerformAction eff state props (LocalCookingAction siteLinks userDetails)
+performActionLocalCooking getLCState a props state =
   let go :: LocalCookingState siteLinks userDetails -> LocalCookingState siteLinks userDetails
-      go = case matching (clonePrism getLCAction) action of
-        Left _ -> id
-        Right a -> case a of
-          ChangedCurrentPage x -> _ { currentPage = x }
-          ChangedWindowSize x -> _ { windowSize = x }
-          ChangedAuthToken x -> _ { authToken = x }
-          ChangedUserDetails x -> _ { userDetails = x }
+      go = case a of
+        ChangedCurrentPage x -> _ { currentPage = x }
+        ChangedWindowSize x -> _ { windowSize = x }
+        ChangedAuthToken x -> _ { authToken = x }
+        ChangedUserDetails x -> _ { userDetails = x }
   in  void (T.cotransform (getLCState %~ go))
 
 
 whileMountedLocalCooking :: forall siteLinks userDetails eff state action props render
                           . LocalCookingParams siteLinks userDetails (Effects eff)
-                         -> Prism' action (LocalCookingAction siteLinks userDetails)
+                         -> (LocalCookingAction siteLinks userDetails -> action)
                          -> (ReactThis props state -> action -> Eff (Effects eff) Unit)
                          -> ReactSpec props state render (Effects eff)
                          -> ReactSpec props state render (Effects eff)
@@ -98,19 +101,19 @@ whileMountedLocalCooking
   , authTokenSignal
   , userDetailsSignal
   }
-  getLCAction
+  buildLCAction
   dispatcher
   reactSpec
   = Signal.whileMountedIxUUID
       currentPageSignal
-      (\this x -> dispatcher this (review (clonePrism getLCAction) (ChangedCurrentPage x)))
+      (\this x -> dispatcher this (buildLCAction (ChangedCurrentPage x)))
   $ Signal.whileMountedIxUUID
       windowSizeSignal
-      (\this x -> dispatcher this (review (clonePrism getLCAction) (ChangedWindowSize x)))
+      (\this x -> dispatcher this (buildLCAction (ChangedWindowSize x)))
   $ Signal.whileMountedIxUUID
       authTokenSignal
-      (\this x -> dispatcher this (review (clonePrism getLCAction) (ChangedAuthToken x)))
+      (\this x -> dispatcher this (buildLCAction (ChangedAuthToken x)))
   $ Signal.whileMountedIxUUID
       userDetailsSignal
-      (\this x -> dispatcher this (review (clonePrism getLCAction) (ChangedUserDetails x)))
+      (\this x -> dispatcher this (buildLCAction (ChangedUserDetails x)))
       reactSpec

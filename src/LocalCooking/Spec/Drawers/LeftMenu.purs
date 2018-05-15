@@ -75,7 +75,7 @@ spec :: forall eff siteLinks userDetailsLinks userDetails
 spec
   params
   { buttons
-  } = T.simpleSpec (performAction <> performActionLocalCooking getLCState getLCAction) render
+  } = T.simpleSpec performAction render
   where
     lastOpen = unsafePerformEff (newRef Nothing)
 
@@ -102,7 +102,7 @@ spec
                 liftEff (writeRef lastOpen Nothing)
                 void $ T.cotransform _ { open = false }
             | otherwise -> pure unit
-      _ -> pure unit
+      LocalCookingAction a -> performActionLocalCooking getLCState a props state
 
 
     render :: T.Render (State siteLinks userDetails) Unit (Action siteLinks userDetails)
@@ -149,7 +149,7 @@ leftMenu
       reactSpecLogin =
           whileMountedLocalCooking
             params
-            getLCAction
+            LocalCookingAction
             (\this -> unsafeCoerceEff <<< dispatcher this)
         $ Queue.whileMountedOne
             mobileDrawerOpenSignal

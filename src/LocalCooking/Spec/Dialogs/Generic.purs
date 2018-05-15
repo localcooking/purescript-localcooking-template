@@ -122,7 +122,7 @@ spec
   , closeQueue
   , buttons
   , title
-  } = T.simpleSpec (performAction <> performActionLocalCooking getLCState getLCAction) render
+  } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
       Open x -> void $ T.cotransform _ { open = Just x }
@@ -145,7 +145,7 @@ spec
               Nothing -> performAction Close props state
               Just closeQueue' -> pure unit
             liftEff (One.putQueue dialogOutputQueue (Just output))
-      _ -> pure unit
+      LocalCookingAction a -> performActionLocalCooking getLCState a props state
 
     render :: T.Render (State input siteLinks userDetails) Unit (Action input siteLinks userDetails)
     render dispatch props state children =
@@ -269,7 +269,7 @@ genericDialog
       reactSpec' =
           whileMountedLocalCooking
             params
-            getLCAction
+            LocalCookingAction
             (\this -> unsafeCoerceEff <<< dispatcher this)
         $ Queue.whileMountedOne
             dialogInputQueue

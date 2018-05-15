@@ -35,6 +35,7 @@ import Data.UUID (GENUUID)
 import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut.JSONUnit (JSONUnit (..))
+import Data.Generic (class Generic)
 import Text.Email.Validate (EmailAddress)
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
@@ -133,6 +134,8 @@ defaultMain :: forall eff siteLinks userDetailsLinks userDetails
             => FromLocation siteLinks
             => Show siteLinks
             => UserDetails userDetails
+            => Generic siteLinks
+            => Generic userDetails
             => LocalCookingArgs siteLinks userDetails (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain

@@ -93,13 +93,13 @@ spec
   , mobileMenuButtonSignal
   , imageSrc
   , buttons
-  } = T.simpleSpec (performAction <> performActionLocalCooking getLCState getLCAction) render
+  } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
       OpenLogin -> liftEff openLogin
       ClickedMobileMenuButton -> liftEff (putQueue mobileMenuButtonSignal unit)
       Clicked x -> liftEff (siteLinks x)
-      _ -> pure unit
+      LocalCookingAction a -> performActionLocalCooking getLCState a props state
 
     render :: T.Render (State siteLinks userDetails) Unit (Action siteLinks userDetails)
     render dispatch props state children =
@@ -187,7 +187,7 @@ topbar
       reactSpec' =
           whileMountedLocalCooking
             params
-            getLCAction
+            LocalCookingAction
             (\this -> unsafeCoerceEff <<< dispatcher this)
             reactSpec
   in  R.createElement (R.createClass reactSpec') unit []

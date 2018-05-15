@@ -34,8 +34,9 @@ import Data.UUID (GENUUID)
 import Data.Maybe (Maybe (..))
 import Data.Either (Either (..))
 import Data.Lens (Lens', Prism', lens, prism')
+import Data.Generic (class Generic)
 import Text.Email.Validate (EmailAddress)
-import Control.Monad.Eff.Console (CONSOLE)
+import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
@@ -117,6 +118,8 @@ spec :: forall eff siteLinks userDetailsLinks userDetails
      => Eq siteLinks
      => ToLocation siteLinks
      => UserDetails userDetails
+     => Generic siteLinks
+     => Generic userDetails
      => LocalCookingParams siteLinks userDetails (Effects eff)
      -> { env                 :: Env
         , development         :: Boolean
@@ -163,14 +166,14 @@ spec
   , env
   , extendedNetwork
   , initFormDataRef
-  } = T.simpleSpec (performAction <> performActionLocalCooking getLCState getLCAction) render
+  } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
       Logout -> liftEff $ do
         One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
         void $ setTimeout 500 $
           One.putQueue errorMessageQueue $ SnackbarMessageRedirect RedirectLogout
-        siteLinks rootLink
+        -- siteLinks rootLink
         IxSignal.set Nothing authTokenSignal
       AttemptLogin -> do
         mEmailPassword <- liftBase (OneIO.callAsync dialog.loginQueue unit)
@@ -195,7 +198,9 @@ spec
                 unsubscribe
                 IxSignal.set Nothing authTokenSignal
                 One.putQueue errorMessageQueue (SnackbarMessageAuthFailure e)
-      _ -> pure unit
+      LocalCookingAction a -> do
+        liftEff $ log $ "Received message...? " <> show a
+        performActionLocalCooking getLCState a props state
 
 
     render :: T.Render (State siteLinks userDetails) Unit (Action siteLinks userDetails)
@@ -395,6 +400,8 @@ app :: forall eff siteLinks userDetailsLinks userDetails
     => Eq siteLinks
     => ToLocation siteLinks
     => UserDetails userDetails
+    => Generic siteLinks
+    => Generic userDetails
     => LocalCookingParams siteLinks userDetails (Effects eff)
     -> { development          :: Boolean
        , env                  :: Env
@@ -463,7 +470,7 @@ app
       reactSpec' =
           whileMountedLocalCooking
             params
-            getLCAction
+            LocalCookingAction
             (\this -> unsafeCoerceEff <<< dispatcher this)
           $ reactSpec
             { componentWillMount = \this -> do

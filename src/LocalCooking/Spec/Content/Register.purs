@@ -25,7 +25,7 @@ import Text.Email.Validate as Email
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class (liftEff)
-import Control.Monad.Eff.Console (log)
+import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Ref (REF, Ref)
 import Control.Monad.Eff.Ref.Extra (takeRef)
 import Control.Monad.Eff.Unsafe (unsafePerformEff, unsafeCoerceEff)
@@ -85,6 +85,7 @@ type Effects eff =
   , exception :: EXCEPTION
   , uuid      :: GENUUID
   , timer     :: TIMER
+  , console   :: CONSOLE
   | eff)
 
 
@@ -140,7 +141,7 @@ spec
       ClickedPrivacyPolicy -> do
         mX <- liftBase (OneIO.callAsync privacyPolicyQueue unit)
         case mX of
-          Nothing -> pure unit
+          Nothing -> liftEff $ log "Privacy policy denied?"
           Just _ -> void $ T.cotransform _ {privacyPolicy = true}
       SubmitRegister -> do
         liftEff $ IxSignal.set true pendingSignal
@@ -284,6 +285,7 @@ spec
             , disabled: state.privacyPolicy
             , onTouchTap: mkEffFn1 \_ -> dispatch ClickedPrivacyPolicy
             } [R.text "Privacy Policy"]
+          , R.br [] []
           , Submit.submit
             { color: Button.secondary
             , variant: Button.raised
