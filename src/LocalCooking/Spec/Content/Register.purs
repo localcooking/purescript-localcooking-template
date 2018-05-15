@@ -240,7 +240,8 @@ spec
             , errorQueue: passwordConfirmErrorQueue
             }
           , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em", paddingBottom: "2em"}] $
-              let mkFab mainColor darkColor icon disabled mLink =
+              let mkFab :: String -> String -> R.ReactElement -> Boolean -> _ -> _
+                  mkFab mainColor darkColor icon disabled hasValue mLink =
                     Button.withStyles
                       (\theme ->
                         { root: createStyles
@@ -248,6 +249,12 @@ spec
                           , color: "#ffffff"
                           , "&:hover": {backgroundColor: darkColor}
                           }
+                        , disabled:
+                          if hasValue
+                            then createStyles
+                                  { backgroundColor: "#9df860"
+                                  }
+                            else createStyles {}
                         }
                       )
                       (\{classes} ->
@@ -256,13 +263,13 @@ spec
                           , classes: Button.createClasses {root: classes.root}
                           , disabled: case mLink of
                             Nothing -> true
-                            _ -> disabled
+                            _ -> disabled || hasValue
                           , href: case mLink of
                             Nothing -> ""
                             Just link -> URI.print (facebookLoginLinkToURI env link)
                           } [icon]
                       )
-              in  [ mkFab "#3b5998" "#1e3f82" facebookIcon (isJust state.fbUserId) $
+              in  [ mkFab "#3b5998" "#1e3f82" facebookIcon false (isJust state.fbUserId) $
                       Just $ FacebookLoginLink
                       { redirectURL: toURI (toLocation FacebookLoginReturn)
                       , state: FacebookLoginState
@@ -280,8 +287,8 @@ spec
                           }
                         }
                       }
-                  , mkFab "#1da1f3" "#0f8cdb" twitterIcon true Nothing
-                  , mkFab "#dd4e40" "#c13627" googleIcon true Nothing
+                  , mkFab "#1da1f3" "#0f8cdb" twitterIcon true false Nothing
+                  , mkFab "#dd4e40" "#c13627" googleIcon true false Nothing
                   ]
           , reCaptcha
             { reCaptchaSignal
