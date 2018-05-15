@@ -21,8 +21,10 @@ import Prelude
 import Data.Maybe (Maybe (..), isJust)
 import Data.UUID (GENUUID)
 import Data.URI.URI (print) as URI
+import Data.Time.Duration (Milliseconds (..))
 import Text.Email.Validate as Email
 import Control.Monad.Base (liftBase)
+import Control.Monad.Aff (delay)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Console (CONSOLE, log)
@@ -142,7 +144,10 @@ spec
         mX <- liftBase (OneIO.callAsync privacyPolicyQueue unit)
         case mX of
           Nothing -> liftEff $ log "Privacy policy denied?"
-          Just _ -> void $ T.cotransform _ {privacyPolicy = true}
+          Just _ -> do
+            void $ T.cotransform _ {privacyPolicy = true}
+            liftBase $ delay $ Milliseconds 200.0
+            performAction ReRender props state
       SubmitRegister -> do
         liftEff $ IxSignal.set true pendingSignal
         mEmail <- liftEff (IxSignal.get email.signal)
