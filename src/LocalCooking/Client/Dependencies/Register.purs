@@ -2,6 +2,7 @@ module LocalCooking.Client.Dependencies.Register where
 
 import LocalCooking.Common.Password (HashedPassword)
 import Google.ReCaptcha (ReCaptchaResponse)
+import Facebook.Types (FacebookUserId)
 
 import Prelude
 
@@ -9,21 +10,24 @@ import Sparrow.Client.Queue (SparrowStaticClientQueues)
 import Text.Email.Validate (EmailAddress)
 import Data.Generic (class Generic, gShow)
 import Data.Argonaut (class EncodeJson, class DecodeJson, decodeJson, fail, (:=), (~>), jsonEmptyObject, (.?))
+import Data.Maybe (Maybe)
 import Control.Alternative ((<|>))
 import Text.Email.Validate as Email
 
 
 newtype RegisterInitIn = RegisterInitIn
-  { email :: EmailAddress
-  , password :: HashedPassword
+  { email     :: EmailAddress
+  , password  :: HashedPassword
   , reCaptcha :: ReCaptchaResponse
+  , fbUserId  :: Maybe FacebookUserId
   }
 
 instance encodeJsonRegisterInitIn :: EncodeJson RegisterInitIn where
-  encodeJson (RegisterInitIn {email,password,reCaptcha})
-    =  "email" := Email.toString email
-    ~> "password" := password
+  encodeJson (RegisterInitIn {email,password,reCaptcha,fbUserId})
+    =  "email"     := Email.toString email
+    ~> "password"  := password
     ~> "reCaptcha" := reCaptcha
+    ~> "fbUserId"  := fbUserId
     ~> jsonEmptyObject
 
 data RegisterFailure

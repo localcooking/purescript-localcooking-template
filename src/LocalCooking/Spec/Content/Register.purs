@@ -164,7 +164,7 @@ spec
                     { password: passwordString
                     , salt: env.salt
                     }
-                  OneIO.callAsync registerQueues (RegisterInitIn {email,password,reCaptcha})
+                  OneIO.callAsync registerQueues (RegisterInitIn {email,password,reCaptcha,fbUserId: state.fbUserId})
                 liftEff $ do
                   case mErr of
                     Nothing -> pure unit
