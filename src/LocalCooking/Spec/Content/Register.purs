@@ -430,4 +430,3 @@ register
     pendingSignal = unsafePerformEff (IxSignal.make false)
     submitQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     submitDisabledSignal = unsafePerformEff (IxSignal.make true)
-    _ = unsafePerformEff $ log "rendering register.."

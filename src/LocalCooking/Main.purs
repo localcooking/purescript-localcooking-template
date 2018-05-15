@@ -281,40 +281,40 @@ defaultMain
     q <- One.newQueue
     One.onQueue q \(siteLink :: siteLinks) -> do
       -- only respect changed pages
-      y <- IxSignal.get currentPageSignal
-      when (y /= siteLink) $ do
-        let continue x = do
-              pushState' x h
-              setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
-              IxSignal.set x currentPageSignal
-        -- redirect rules
-        case getUserDetailsLink siteLink of
-          Just _ -> do
+      -- y <- IxSignal.get currentPageSignal
+      -- when (y /= siteLink) $ do
+      let continue x = do
+            pushState' x h
+            setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
+            IxSignal.set x currentPageSignal
+      -- redirect rules
+      case getUserDetailsLink siteLink of
+        Just _ -> do
+          mAuth <- IxSignal.get authTokenSignal
+          case mAuth of
+            Just _ -> continue siteLink
+            Nothing -> do
+              -- in /userDetails while not logged in
+              void $ setTimeout 1000 $
+                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+              continue rootLink
+        _ | siteLink == registerLink -> do
             mAuth <- IxSignal.get authTokenSignal
             case mAuth of
-              Just _ -> continue siteLink
-              Nothing -> do
-                -- in /userDetails while not logged in
+              Nothing -> continue siteLink
+              Just _ -> do
+                -- in /register while logged in
+                void $ setTimeout 1000 $
+                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+                continue rootLink
+          | otherwise -> do
+            mUserDetails <- IxSignal.get userDetailsSignal
+            case extraRedirect siteLink mUserDetails of
+              Nothing -> continue siteLink
+              Just y -> do
                 void $ setTimeout 1000 $
                   One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
-                continue rootLink
-          _ | siteLink == registerLink -> do
-              mAuth <- IxSignal.get authTokenSignal
-              case mAuth of
-                Nothing -> continue siteLink
-                Just _ -> do
-                  -- in /register while logged in
-                  void $ setTimeout 1000 $
-                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
-                  continue rootLink
-            | otherwise -> do
-              mUserDetails <- IxSignal.get userDetailsSignal
-              case extraRedirect siteLink mUserDetails of
-                Nothing -> continue siteLink
-                Just y -> do
-                  void $ setTimeout 1000 $
-                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
-                  continue y
+                continue y
     pure (writeOnly q)
 
 
