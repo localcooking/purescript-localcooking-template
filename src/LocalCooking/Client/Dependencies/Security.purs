@@ -3,10 +3,12 @@ module LocalCooking.Client.Dependencies.Security where
 import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn, AuthInitOut)
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.Password (HashedPassword)
+import Facebook.Types (FacebookUserId)
 
 import Prelude
 import Data.Argonaut (class EncodeJson, class DecodeJson, decodeJson, fail, (:=), (~>), jsonEmptyObject)
 import Data.Generic (class Generic, gShow)
+import Data.Maybe (Maybe)
 import Text.Email.Validate (EmailAddress)
 import Text.Email.Validate as Email
 import Sparrow.Client.Queue (SparrowStaticClientQueues)
@@ -14,16 +16,18 @@ import Sparrow.Client.Queue (SparrowStaticClientQueues)
 
 
 newtype SecurityInitIn' = SecurityInitIn'
-  { email :: EmailAddress
+  { email       :: EmailAddress
   , oldPassword :: HashedPassword
   , newPassword :: HashedPassword
+  , fbUserId    :: Maybe FacebookUserId
   }
 
 instance encodeJsonSecurityInitIn :: EncodeJson SecurityInitIn' where
-  encodeJson (SecurityInitIn' {email,oldPassword,newPassword})
-    =  "email" := Email.toString email
+  encodeJson (SecurityInitIn' {email,oldPassword,newPassword,fbUserId})
+    =  "email"       := Email.toString email
     ~> "newPassword" := newPassword
     ~> "oldPassword" := oldPassword
+    ~> "fbUserId"    := fbUserId
     ~> jsonEmptyObject
 
 type SecurityInitIn = AuthInitIn AuthToken SecurityInitIn'

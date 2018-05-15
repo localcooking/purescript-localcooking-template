@@ -136,7 +136,8 @@ spec
                         }
                       OneIO.callAsync securityQueues $ AuthInitIn
                         { token: authToken
-                        , subj: SecurityInitIn' {email,newPassword,oldPassword}
+                        , subj: SecurityInitIn' {email,newPassword,oldPassword,fbUserId: Nothing}
+                          -- FIXME facebook user id assignment
                         }
                     liftEff $ do
                       case mErr of
