@@ -241,7 +241,7 @@ spec
             }
           , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em", paddingBottom: "2em"}] $
               let mkFab :: String -> String -> R.ReactElement -> Boolean -> _ -> _
-                  mkFab mainColor darkColor icon disabled hasValue mLink =
+                  mkFab mainColor darkColor icon hasValue mLink =
                     Button.withStyles
                       (\theme ->
                         { root: createStyles
@@ -254,7 +254,9 @@ spec
                             then createStyles
                                   { backgroundColor: "#9df860"
                                   }
-                            else createStyles {}
+                            else createStyles
+                                  { backgroundColor: "#000000" -- test
+                                  }
                         }
                       )
                       (\{classes} ->
@@ -263,13 +265,13 @@ spec
                           , classes: Button.createClasses {root: classes.root}
                           , disabled: case mLink of
                             Nothing -> true
-                            _ -> disabled || hasValue
+                            _ -> hasValue
                           , href: case mLink of
                             Nothing -> ""
                             Just link -> URI.print (facebookLoginLinkToURI env link)
                           } [icon]
                       )
-              in  [ mkFab "#3b5998" "#1e3f82" facebookIcon false (isJust state.fbUserId) $
+              in  [ mkFab "#3b5998" "#1e3f82" facebookIcon (isJust state.fbUserId) $
                       Just $ FacebookLoginLink
                       { redirectURL: toURI (toLocation FacebookLoginReturn)
                       , state: FacebookLoginState
@@ -287,8 +289,8 @@ spec
                           }
                         }
                       }
-                  , mkFab "#1da1f3" "#0f8cdb" twitterIcon true false Nothing
-                  , mkFab "#dd4e40" "#c13627" googleIcon true false Nothing
+                  , mkFab "#1da1f3" "#0f8cdb" twitterIcon false Nothing
+                  , mkFab "#dd4e40" "#c13627" googleIcon false Nothing
                   ]
           , reCaptcha
             { reCaptchaSignal
