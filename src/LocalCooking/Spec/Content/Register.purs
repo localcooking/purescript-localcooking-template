@@ -249,14 +249,6 @@ spec
                           , color: "#ffffff"
                           , "&:hover": {backgroundColor: darkColor}
                           }
-                        , disabled:
-                          if hasValue
-                            then createStyles
-                                  { backgroundColor: "#9df860"
-                                  }
-                            else createStyles
-                                  { backgroundColor: "#000000" -- test
-                                  }
                         }
                       )
                       (\{classes} ->
@@ -269,6 +261,14 @@ spec
                           , href: case mLink of
                             Nothing -> ""
                             Just link -> URI.print (facebookLoginLinkToURI env link)
+                          , style:
+                            if hasValue
+                              then createStyles
+                                    { backgroundColor: "#9df860"
+                                    }
+                              else createStyles
+                                    { backgroundColor: "#000000" -- test
+                                    }
                           } [icon]
                       )
               in  [ mkFab "#3b5998" "#1e3f82" facebookIcon (isJust state.fbUserId) $
