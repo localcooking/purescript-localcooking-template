@@ -266,9 +266,7 @@ spec
                               then createStyles
                                     { backgroundColor: "#9df860"
                                     }
-                              else createStyles
-                                    { backgroundColor: "#000000" -- test
-                                    }
+                              else createStyles {}
                           } [icon]
                       )
               in  [ mkFab "#3b5998" "#1e3f82" facebookIcon (isJust state.fbUserId) $
