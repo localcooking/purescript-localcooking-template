@@ -1,7 +1,6 @@
 module LocalCooking.Spec.Google.ReCaptcha where
 
-import Google.ReCaptcha (ReCaptchaResponse)
-import LocalCooking.Types.Env (Env)
+import Google.ReCaptcha (ReCaptchaResponse, ReCaptchaSiteKey)
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -32,10 +31,10 @@ type Effects eff =
 
 spec :: forall eff
       . { reCaptchaSignal :: IxSignal (Effects eff) (Maybe ReCaptchaResponse)
-        , env :: Env
+        , reCaptchaSiteKey :: ReCaptchaSiteKey
         }
      -> T.Spec (Effects eff) State Unit Action
-spec {reCaptchaSignal,env} = T.simpleSpec performAction render
+spec {reCaptchaSignal,reCaptchaSiteKey} = T.simpleSpec performAction render
   where
     performAction action props state = case action of
       ChangedReCaptcha x -> liftEff (IxSignal.set x reCaptchaSignal)
@@ -43,7 +42,7 @@ spec {reCaptchaSignal,env} = T.simpleSpec performAction render
     render :: T.Render State Unit Action
     render dispatch props state children =
       [ RG.reCaptcha
-        { sitekey: env.googleReCaptchaSiteKey
+        { sitekey: reCaptchaSiteKey
         , verifyCallback: mkEffFn1 (dispatch <<< ChangedReCaptcha <<< Just)
         , onloadCallback: pure unit
         }
@@ -52,7 +51,7 @@ spec {reCaptchaSignal,env} = T.simpleSpec performAction render
 
 reCaptcha :: forall eff
            . { reCaptchaSignal :: IxSignal (Effects eff) (Maybe ReCaptchaResponse)
-             , env :: Env
+             , reCaptchaSiteKey :: ReCaptchaSiteKey
              }
           -> R.ReactElement
 reCaptcha params =

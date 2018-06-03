@@ -17,13 +17,14 @@ import LocalCooking.Common.User.Password (hashPassword)
 import Google.ReCaptcha (ReCaptchaResponse)
 import Facebook.Call (FacebookLoginLink (..), facebookLoginLinkToURI)
 import Facebook.State (FacebookLoginState (..), FacebookLoginUnsavedFormData (FacebookLoginUnsavedFormDataRegister))
-import Facebook.Types (FacebookUserId)
+import Facebook.Types (FacebookUserId, FacebookClientId)
 
 import Prelude
 import Data.Maybe (Maybe (..), isJust)
 import Data.UUID (GENUUID)
 import Data.URI.URI (print) as URI
 import Data.Time.Duration (Milliseconds (..))
+import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Text.Email.Validate as Email
 import Control.Monad.Base (liftBase)
 import Control.Monad.Aff (delay)
@@ -132,7 +133,7 @@ spec
   , errorMessageQueue
   , privacyPolicyQueue
   , toRoot
-  , env
+  , env: {facebookClientId, salt, googleReCaptchaSiteKey}
   , reCaptchaSignal
   , pendingSignal
   , email
@@ -164,22 +165,15 @@ spec
                 mErr <- liftBase $ do
                   password <- liftBase $ hashPassword
                     { password: passwordString
-                    , salt: env.salt
+                    , salt: salt
                     }
                   pure Nothing -- FIXME
                   -- OneIO.callAsync registerQueues (Register {email,password,reCaptcha,fbUserId: state.fbUserId})
                 liftEff $ do
-                  case mErr of
-                    Nothing -> pure unit
-                    Just initOut -> One.putQueue errorMessageQueue $ case initOut of
-                      RegisterInitOutEmailSent ->
-                        SnackbarMessageRegister Nothing
-                      RegisterInitOutBadCaptcha ->
-                        SnackbarMessageRegister $
-                          Just RegisterErrorBadCaptchaResponse
-                      RegisterInitOutDBError e ->
-                        SnackbarMessageRegister $
-                          Just RegisterErrorEmailInUse
+                  One.putQueue errorMessageQueue $ case mErr of
+                    Nothing -> SnackbarMessageRegister $
+                      Just RegisterErrorEmailInUse -- FIXME bad recaptcha response error?
+                    Just JSONUnit -> SnackbarMessageRegister Nothing
                   IxSignal.set false pendingSignal
               _ -> pure unit
           _ -> pure unit
@@ -243,59 +237,30 @@ spec
             , errorQueue: passwordConfirmErrorQueue
             }
           , R.div [RP.style {display: "flex", justifyContent: "space-evenly", paddingTop: "2em", paddingBottom: "2em"}] $
-              let mkFab :: String -> String -> R.ReactElement -> Boolean -> _ -> _
-                  mkFab mainColor darkColor icon hasValue mLink =
-                    Button.withStyles
-                      (\theme ->
-                        { root: createStyles
-                          { backgroundColor: mainColor
-                          , color: "#ffffff"
-                          , "&:hover": {backgroundColor: darkColor}
-                          }
-                        }
-                      )
-                      (\{classes} ->
-                        button
-                          { variant: Button.fab
-                          , classes: Button.createClasses {root: classes.root}
-                          , disabled: case mLink of
-                            Nothing -> true
-                            _ -> hasValue
-                          , href: case mLink of
-                            Nothing -> ""
-                            Just link -> URI.print (facebookLoginLinkToURI env link)
-                          , style:
-                            if hasValue
-                              then createStyles
-                                    { backgroundColor: "#9df860"
-                                    }
-                              else createStyles {}
-                          } [icon]
-                      )
-              in  [ mkFab "#3b5998" "#1e3f82" facebookIcon (isJust state.fbUserId) $
-                      Just $ FacebookLoginLink
-                      { redirectURL: toURI (toLocation FacebookLoginReturn)
-                      , state: FacebookLoginState
-                        { origin: unsafePerformEff (IxSignal.get currentPageSignal)
-                        , formData: Just $ FacebookLoginUnsavedFormDataRegister
-                          { email: case unsafePerformEff (IxSignal.get email.signal) of
-                              Email.EmailPartial e -> e
-                              Email.EmailBad e -> e
-                              Email.EmailGood e -> Email.toString e
-                          , emailConfirm: case unsafePerformEff (IxSignal.get emailConfirm.signal) of
-                              Email.EmailPartial e -> e
-                              Email.EmailBad e -> e
-                              Email.EmailGood e -> Email.toString e
-                          , fbUserId: Nothing
-                          }
-                        }
+              [ mkFab facebookClientId "#3b5998" "#1e3f82" facebookIcon (isJust state.fbUserId) $
+                  Just $ FacebookLoginLink
+                  { redirectURL: toURI (toLocation FacebookLoginReturn)
+                  , state: FacebookLoginState
+                    { origin: toLocation $ unsafePerformEff $ IxSignal.get currentPageSignal
+                    , formData: Just $ FacebookLoginUnsavedFormDataRegister
+                      { email: case unsafePerformEff (IxSignal.get email.signal) of
+                          Email.EmailPartial e -> e
+                          Email.EmailBad e -> e
+                          Email.EmailGood e -> Email.toString e
+                      , emailConfirm: case unsafePerformEff (IxSignal.get emailConfirm.signal) of
+                          Email.EmailPartial e -> e
+                          Email.EmailBad e -> e
+                          Email.EmailGood e -> Email.toString e
+                      , fbUserId: Nothing
                       }
-                  , mkFab "#1da1f3" "#0f8cdb" twitterIcon false Nothing
-                  , mkFab "#dd4e40" "#c13627" googleIcon false Nothing
-                  ]
+                    }
+                  }
+              , mkFab facebookClientId "#1da1f3" "#0f8cdb" twitterIcon false Nothing
+              , mkFab facebookClientId "#dd4e40" "#c13627" googleIcon false Nothing
+              ]
           , reCaptcha
             { reCaptchaSignal
-            , env
+            , reCaptchaSiteKey: googleReCaptchaSiteKey
             }
           , Submit.submit
             { color: Button.default
@@ -460,3 +425,36 @@ register
     submitDisabledSignal = unsafePerformEff (IxSignal.make true)
     privacyQueue = unsafePerformEff $ readOnly <$> IxQueue.newIxQueue
     privacyDisabledSignal = unsafePerformEff (IxSignal.make false)
+
+
+-- | For social logins
+mkFab :: FacebookClientId -> String -> String -> R.ReactElement
+      -> Boolean -> Maybe FacebookLoginLink -> R.ReactElement
+mkFab facebookClientId mainColor darkColor icon hasValue mLink =
+  Button.withStyles
+    (\theme ->
+      { root: createStyles
+        { backgroundColor: mainColor
+        , color: "#ffffff"
+        , "&:hover": {backgroundColor: darkColor}
+        }
+      }
+    )
+    (\{classes} ->
+      button
+        { variant: Button.fab
+        , classes: Button.createClasses {root: classes.root}
+        , disabled: case mLink of
+          Nothing -> true
+          _ -> hasValue
+        , href: case mLink of
+          Nothing -> ""
+          Just link -> URI.print (facebookLoginLinkToURI facebookClientId link)
+        , style:
+          if hasValue
+            then createStyles
+                  { backgroundColor: "#9df860"
+                  }
+            else createStyles {}
+        } [icon]
+    )

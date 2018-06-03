@@ -143,7 +143,7 @@ loginDialog
               [ mkFab facebookClientId "#3b5998" "#1e3f82" facebookIcon $ Just $ FacebookLoginLink
                 { redirectURL: toURI (toLocation FacebookLoginReturn)
                 , state: FacebookLoginState
-                  { origin: unsafePerformEff (IxSignal.get currentPageSignal)
+                  { origin: toLocation $ unsafePerformEff $ IxSignal.get currentPageSignal
                   , formData: Nothing
                   }
                 }
@@ -190,10 +190,8 @@ loginDialog
 
 
 -- | For social logins
-mkFab :: forall siteLinks
-       . ToLocation siteLinks
-      => FacebookClientId -> String -> String -> R.ReactElement
-      -> Maybe (FacebookLoginLink siteLinks) -> R.ReactElement
+mkFab :: FacebookClientId -> String -> String -> R.ReactElement
+      -> Maybe FacebookLoginLink -> R.ReactElement
 mkFab facebookClientId mainColor darkColor icon mLink =
   Button.withStyles
     (\theme ->

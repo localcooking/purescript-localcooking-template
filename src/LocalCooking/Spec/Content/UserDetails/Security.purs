@@ -19,6 +19,7 @@ import Prelude
 import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple (..))
 import Data.UUID (GENUUID)
+import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff.Ref (REF, Ref)
 import Control.Monad.Eff.Ref.Extra (takeRef)
@@ -144,16 +145,9 @@ spec
                       --     -- FIXME facebook user id assignment
                       --   }
                     liftEff $ do
-                      case mErr of
-                        Nothing -> pure unit
-                        Just initOut -> One.putQueue errorMessageQueue $ case initOut of
-                          AuthInitOutNoAuth ->
-                            SnackbarMessageSecurity SecuritySaveFailed
-                          AuthInitOut {subj: initOut'} -> case initOut' of
-                            SecurityInitOutSuccess ->
-                              SnackbarMessageSecurity SecuritySaveSuccess
-                            SecurityInitOutFailure ->
-                              SnackbarMessageSecurity SecuritySaveFailed
+                      One.putQueue errorMessageQueue $ case mErr of
+                        Nothing -> SnackbarMessageSecurity SecuritySaveFailed
+                        Just JSONUnit -> SnackbarMessageSecurity SecuritySaveSuccess
                       IxSignal.set false pendingSignal
               _ -> pure unit
           _ -> pure unit
