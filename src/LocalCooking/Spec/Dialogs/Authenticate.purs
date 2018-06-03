@@ -9,11 +9,12 @@ import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Common.User.Password (HashedPassword, hashPassword)
 import LocalCooking.Dependencies.AccessToken.Generic (AccessInitIn (..))
 import LocalCooking.Dependencies.Validate (PasswordVerifySparrowClientQueues)
-import LocalCooking.Dependencies.AuthToken (AuthTokenFailure (AuthExistsFailure, AuthTokenLoginFailure))
+import LocalCooking.Dependencies.AuthToken (AuthTokenFailure (AuthTokenLoginFailure))
 
 import Prelude
 import Data.Maybe (Maybe (..))
 import Data.UUID (genUUID, GENUUID)
+import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Control.Monad.Base (liftBase)
 import Control.Monad.Eff.Unsafe (unsafePerformEff)
 import Control.Monad.Eff.Ref (REF)
@@ -103,13 +104,10 @@ authenticateDialog
           case mVerify of
             Just JSONUnit -> do
               pure (Just hashedPassword)
-            _ -> do
-              liftEff $ case mVerify of
-                Nothing ->
-                  One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthExistsFailure)
-                _ ->
-                  One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthTokenLoginFailure)
-              liftEff (One.putQueue passwordErrorQueue unit)
+            Nothing -> do
+              liftEff $ do
+                One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthTokenLoginFailure)
+                One.putQueue passwordErrorQueue unit
               pure Nothing
     , reset: do
       IxSignal.set "" passwordSignal

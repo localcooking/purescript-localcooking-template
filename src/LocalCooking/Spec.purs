@@ -15,10 +15,10 @@ import LocalCooking.Types.Env (Env)
 import LocalCooking.Types.Params (LocalCookingParams, LocalCookingState, LocalCookingAction, initLocalCookingState, performActionLocalCooking, whileMountedLocalCooking)
 import LocalCooking.Links.Class (registerLink, rootLink, userDetailsLink, getUserDetailsLink, userDetailsGeneralLink, userDetailsSecurityLink, class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Common.User.Password (HashedPassword)
--- import LocalCooking.Client.Dependencies.AuthToken
---   ( AuthTokenSparrowClientQueues
---   , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenDeltaOut (..)
---   , AuthTokenFailure (AuthExistsFailure), PreliminaryAuthToken (..))
+import LocalCooking.Dependencies.AuthToken
+  ( AuthTokenSparrowClientQueues
+  , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenDeltaOut (..)
+  , PreliminaryAuthToken (..), AuthTokenFailure (AuthTokenLoginFailure))
 import LocalCooking.Dependencies (Queues)
 import LocalCooking.User (class UserDetails)
 import Facebook.State (FacebookLoginUnsavedFormData)
@@ -181,7 +181,7 @@ spec
           case mInitOut of
             Nothing -> do
               IxSignal.set Nothing authTokenSignal
-              One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthExistsFailure)
+              One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthTokenLoginFailure)
             Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
               AuthTokenInitOutSuccess authToken -> do
                 IxSignal.set (Just authToken) authTokenSignal
