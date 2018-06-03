@@ -10,8 +10,10 @@ import LocalCooking.Types.Env (Env)
 import LocalCooking.Types.Params (LocalCookingParams)
 import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
 import LocalCooking.Links.Class (class ToLocation, toLocation)
-import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues, RegisterInitIn (..), RegisterInitOut (..))
-import LocalCooking.Common.Password (hashPassword)
+-- import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues, RegisterInitIn (..), RegisterInitOut (..))
+import LocalCooking.Dependencies.Common (RegisterSparrowClientQueues)
+import LocalCooking.Semantics.Common (Register (..))
+import LocalCooking.Common.User.Password (hashPassword)
 import Google.ReCaptcha (ReCaptchaResponse)
 import Facebook.Call (FacebookLoginLink (..), facebookLoginLinkToURI)
 import Facebook.State (FacebookLoginState (..), FacebookLoginUnsavedFormData (FacebookLoginUnsavedFormDataRegister))
@@ -164,7 +166,8 @@ spec
                     { password: passwordString
                     , salt: env.salt
                     }
-                  OneIO.callAsync registerQueues (RegisterInitIn {email,password,reCaptcha,fbUserId: state.fbUserId})
+                  pure Nothing -- FIXME
+                  -- OneIO.callAsync registerQueues (Register {email,password,reCaptcha,fbUserId: state.fbUserId})
                 liftEff $ do
                   case mErr of
                     Nothing -> pure unit

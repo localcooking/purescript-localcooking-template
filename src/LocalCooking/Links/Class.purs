@@ -134,7 +134,7 @@ onPopState go w =
     Right str -> case runParser parseLocation str of
       Left e -> throw $ "onPopState location parsing error: " <> show e <> ", original: " <> str
       Right loc -> case fromLocation loc of
-        Left e -> throw $ "onPopState fromLocation error: " <> e <> ", original: " <> show loc
+        Left e -> throw $ "onPopState fromLocation error: " <> e <> ", original: " <> printLocation loc
         Right (x :: siteLinks) -> go x
   where
     onPopState' f = runEffFn2 onPopStateImpl (mkEffFn1 f) w

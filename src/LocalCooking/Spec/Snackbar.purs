@@ -1,6 +1,6 @@
 module LocalCooking.Spec.Snackbar where
 
-import LocalCooking.Client.Dependencies.AuthToken (AuthTokenFailure (..), LoginFailure (..))
+import LocalCooking.Dependencies.AuthToken (AuthTokenFailure (..))
 import Facebook.Types (FacebookLoginReturnError (..))
 
 import Prelude
@@ -145,10 +145,8 @@ spec = T.simpleSpec performAction render
                     FacebookLoginVerifyParseFailure a -> R.text $ "Facebook parse failure: " <> a
                     FacebookLoginUserDetailsParseFailure a -> R.text $ "Facebook parse failure: " <> a
                     FacebookLoginGetTokenError' a b c d -> R.text $ "Facebook get token error: " <> a <> ", " <> b <> ", " <> show c <> ", " <> d
-                  AuthTokenLoginFailure f -> case f of
-                    BadPassword -> R.text "Password incorrect, please try again."
-                    EmailDoesntExist -> R.text "Email address not found, please register."
-                  AuthExistsFailure -> R.text "Warning: You've been logged out; your session expired."
+                  AuthTokenLoginFailure -> R.text "Password incorrect, please try again."
+                  -- AuthExistsFailure -> R.text "Warning: You've been logged out; your session expired."
                 SnackbarMessageUserEmail userEmail -> case userEmail of
                   UserEmailNoInitOut -> R.text "Internal Error: userEmail resource failed"
                   UserEmailNoAuth -> R.text "Error: No authorization for email"

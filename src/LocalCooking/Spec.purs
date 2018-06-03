@@ -14,15 +14,12 @@ import LocalCooking.Window (WindowSize (Laptop))
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Types.Params (LocalCookingParams, LocalCookingState, LocalCookingAction, initLocalCookingState, performActionLocalCooking, whileMountedLocalCooking)
 import LocalCooking.Links.Class (registerLink, rootLink, userDetailsLink, getUserDetailsLink, userDetailsGeneralLink, userDetailsSecurityLink, class LocalCookingSiteLinks, class ToLocation)
-import LocalCooking.Common.Password (HashedPassword)
-import LocalCooking.Client.Dependencies.AuthToken
-  ( AuthTokenSparrowClientQueues
-  , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenDeltaOut (..)
-  , AuthTokenFailure (AuthExistsFailure), PreliminaryAuthToken (..))
-import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
-import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
-import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
-import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
+import LocalCooking.Common.User.Password (HashedPassword)
+-- import LocalCooking.Client.Dependencies.AuthToken
+--   ( AuthTokenSparrowClientQueues
+--   , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenDeltaOut (..)
+--   , AuthTokenFailure (AuthExistsFailure), PreliminaryAuthToken (..))
+import LocalCooking.Dependencies (Queues)
 import LocalCooking.User (class UserDetails)
 import Facebook.State (FacebookLoginUnsavedFormData)
 
@@ -113,7 +110,7 @@ getLCAction = prism' LocalCookingAction $ case _ of
   _ -> Nothing
 
 
-spec :: forall eff siteLinks userDetailsLinks userDetails
+spec :: forall eff siteLinks userDetailsLinks userDetails siteQueues
       . LocalCookingSiteLinks siteLinks userDetailsLinks
      => Eq siteLinks
      => ToLocation siteLinks
@@ -125,13 +122,7 @@ spec :: forall eff siteLinks userDetailsLinks userDetails
         , development         :: Boolean
         , errorMessageQueue   :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
         , initFormDataRef     :: Ref (Maybe FacebookLoginUnsavedFormData)
-        , dependencies ::
-          { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
-          , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
-          , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
-          , securityQueues       :: SecuritySparrowClientQueues (Effects eff)
-          , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
-          }
+        , dependenciesQueues  :: Queues siteQueues (Effects eff)
         , dialog ::
           { loginQueue         :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
           , loginCloseQueue    :: One.Queue (write :: WRITE) (Effects eff) Unit

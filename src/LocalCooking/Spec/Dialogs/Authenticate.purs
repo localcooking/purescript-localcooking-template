@@ -6,9 +6,10 @@ import LocalCooking.Spec.Snackbar (SnackbarMessage (..))
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Types.Params (LocalCookingParams)
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation)
-import LocalCooking.Common.Password (HashedPassword, hashPassword)
-import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues, PasswordVerifyInitIn (PasswordVerifyInitInAuth), PasswordVerifyInitOut (PasswordVerifyInitOutSuccess))
-import LocalCooking.Client.Dependencies.AuthToken (LoginFailure (BadPassword), AuthTokenFailure (AuthExistsFailure, AuthTokenLoginFailure))
+import LocalCooking.Common.User.Password (HashedPassword, hashPassword)
+import LocalCooking.Dependencies.AccessToken.Generic (AccessInitIn (..))
+import LocalCooking.Dependencies.Validate (PasswordVerifySparrowClientQueues)
+import LocalCooking.Dependencies.AuthToken (AuthTokenFailure (AuthExistsFailure, AuthTokenLoginFailure))
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -98,16 +99,16 @@ authenticateDialog
           hashedPassword <- liftBase (hashPassword {salt: env.salt, password: pw})
           mVerify <- OneIO.callAsync
             passwordVerifyQueues
-            (PasswordVerifyInitInAuth {authToken,password: hashedPassword})
+            (AccessInitIn {token: authToken, subj: hashedPassword})
           case mVerify of
-            Just PasswordVerifyInitOutSuccess -> do
+            Just JSONUnit -> do
               pure (Just hashedPassword)
             _ -> do
               liftEff $ case mVerify of
                 Nothing ->
                   One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthExistsFailure)
                 _ ->
-                  One.putQueue errorMessageQueue $ SnackbarMessageAuthFailure $ AuthTokenLoginFailure BadPassword
+                  One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthTokenLoginFailure)
               liftEff (One.putQueue passwordErrorQueue unit)
               pure Nothing
     , reset: do

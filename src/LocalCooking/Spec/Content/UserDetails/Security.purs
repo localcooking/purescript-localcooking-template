@@ -7,9 +7,12 @@ import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Spec.Snackbar (SnackbarMessage (SnackbarMessageSecurity), SecurityMessage (..))
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Types.Params (LocalCookingParams)
-import LocalCooking.Common.Password (HashedPassword, hashPassword)
-import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues, SecurityInitIn' (..), SecurityInitOut' (..))
-import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
+import LocalCooking.Common.User.Password (HashedPassword, hashPassword)
+import LocalCooking.Dependencies.Common (SetUserSparrowClientQueues)
+import LocalCooking.Dependencies.AccessToken.Generic (AccessInitIn (..))
+import LocalCooking.Semantics.Common (User (..))
+-- import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues, SecurityInitIn' (..), SecurityInitOut' (..))
+-- import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
 import Facebook.State (FacebookLoginUnsavedFormData (FacebookLoginUnsavedFormDataSecurity))
 
 import Prelude
@@ -76,7 +79,7 @@ spec :: forall eff siteLinks userDetails
       . LocalCookingParams siteLinks userDetails (Effects eff)
      -> { errorMessageQueue       :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
         , env                     :: Env
-        , securityQueues          :: SecuritySparrowClientQueues (Effects eff)
+        , setUserQueues           :: SetUserSparrowClientQueues (Effects eff)
         , authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
         , email ::
           { signal        :: IxSignal (Effects eff) Email.EmailState
@@ -104,7 +107,7 @@ spec
   {authTokenSignal}
   { errorMessageQueue
   , env
-  , securityQueues
+  , setUserQueues
   , authenticateDialogQueue
   , email
   , emailConfirm
@@ -134,11 +137,12 @@ spec
                         { password: passwordString
                         , salt: env.salt
                         }
-                      OneIO.callAsync securityQueues $ AuthInitIn
-                        { token: authToken
-                        , subj: SecurityInitIn' {email,newPassword,oldPassword,fbUserId: Nothing}
-                          -- FIXME facebook user id assignment
-                        }
+                      pure Nothing -- FIXME
+                      -- OneIO.callAsync setUserQueues $ AccessInitIn
+                      --   { token: authToken
+                      --   , subj: User {email,newPassword,oldPassword,fbUserId: Nothing}
+                      --     -- FIXME facebook user id assignment
+                      --   }
                     liftEff $ do
                       case mErr of
                         Nothing -> pure unit
@@ -225,7 +229,7 @@ security :: forall eff siteLinks userDetails
           . LocalCookingParams siteLinks userDetails (Effects eff)
          -> { errorMessageQueue       :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
             , authenticateDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe HashedPassword)
-            , securityQueues          :: SecuritySparrowClientQueues (Effects eff)
+            , setUserQueues           :: SetUserSparrowClientQueues (Effects eff)
             , env                     :: Env
             , initFormDataRef         :: Ref (Maybe FacebookLoginUnsavedFormData)
             }
@@ -235,7 +239,7 @@ security
   { errorMessageQueue
   , authenticateDialogQueue
   , env
-  , securityQueues
+  , setUserQueues
   , initFormDataRef
   } =
   let {spec: reactSpec, dispatcher} =
@@ -245,7 +249,7 @@ security
             { env
             , errorMessageQueue
             , authenticateDialogQueue
-            , securityQueues
+            , setUserQueues
             , email:
               { signal: emailSignal
               , updatedQueue: emailUpdatedQueue

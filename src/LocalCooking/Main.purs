@@ -7,13 +7,14 @@ import LocalCooking.Window (widthToWindowSize)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..), UserEmailError (..))
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
-import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues, PreliminaryAuthToken (..))
-import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
-import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
-import LocalCooking.Client.Dependencies.UserRoles (UserRolesSparrowClientQueues)
-import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
-import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
-import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
+import LocalCooking.Dependencies (dependencies, newQueues, Queues)
+-- import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues, PreliminaryAuthToken (..))
+-- import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
+-- import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
+-- import LocalCooking.Client.Dependencies.UserRoles (UserRolesSparrowClientQueues)
+-- import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
+-- import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
+-- import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.User.Role (UserRole)
 import LocalCooking.User (class UserDetails)
@@ -113,7 +114,8 @@ type LocalCookingArgs siteLinks userDetails eff =
       , roles :: ParAff eff (Array UserRole)
       } -> Aff eff (Maybe userDetails)
     }
-  , deps          :: SparrowClientT eff (Eff eff) Unit
+  , newSiteQueues :: Eff eff siteQueues
+  , deps          :: siteQueues -> SparrowClientT eff (Eff eff) Unit -- FIXME TODO MonadBaseControl?
   , env           :: Env
   , initSiteLinks :: siteLinks
   , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks
@@ -139,7 +141,8 @@ defaultMain :: forall eff siteLinks userDetailsLinks userDetails
             => LocalCookingArgs siteLinks userDetails (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain
-  { deps
+  { newSiteQueues
+  , deps
   , topbar
   , leftDrawer
   , content
@@ -377,27 +380,9 @@ defaultMain
     pure out
 
 
-  -- Sparrow dependencies
-  ( authTokenQueues :: AuthTokenSparrowClientQueues (Effects eff)
-    ) <- newSparrowClientQueues
-  ( registerQueues :: RegisterSparrowClientQueues (Effects eff)
-    ) <- newSparrowStaticClientQueues
-  ( userEmailQueues :: UserEmailSparrowClientQueues (Effects eff)
-    ) <- newSparrowStaticClientQueues
-  ( userRolesQueues :: UserRolesSparrowClientQueues (Effects eff)
-    ) <- newSparrowStaticClientQueues
-  ( securityQueues :: SecuritySparrowClientQueues (Effects eff)
-    ) <- newSparrowStaticClientQueues
-  ( passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
-    ) <- newSparrowStaticClientQueues
+  dependenciesQueues <- newQueues newSiteQueues
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
-    unpackClient (Topic ["template", "authToken"]) (sparrowClientQueues authTokenQueues)
-    unpackClient (Topic ["template", "register"]) (sparrowStaticClientQueues registerQueues)
-    unpackClient (Topic ["template", "userEmail"]) (sparrowStaticClientQueues userEmailQueues)
-    unpackClient (Topic ["template", "userRoles"]) (sparrowStaticClientQueues userRolesQueues)
-    unpackClient (Topic ["template", "security"]) (sparrowStaticClientQueues securityQueues)
-    unpackClient (Topic ["template", "passwordVerify"]) (sparrowStaticClientQueues passwordVerifyQueues)
-    deps
+    dependencies depQueues deps
 
 
   ( loginCloseQueue :: One.Queue (write :: WRITE) (Effects eff) Unit
@@ -462,13 +447,7 @@ defaultMain
           , errorMessageQueue
           , loginCloseQueue
           , initFormDataRef
-          , dependencies:
-            { authTokenQueues
-            , registerQueues
-            , userEmailQueues
-            , securityQueues
-            , passwordVerifyQueues
-            }
+          , dependenciesQueues
           , templateArgs:
             { content
             , topbar
