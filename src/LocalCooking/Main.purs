@@ -175,6 +175,7 @@ defaultMain
       PreliminaryAuthToken (Just eErrX) -> pure (Just eErrX)
 
   -- Mutable form data reference for first-loaded component that obtains it
+  -- FIXME this is fucked; shouldn't really need a ref honestly
   ( initFormDataRef :: Ref (Maybe FacebookLoginUnsavedFormData)
     ) <- newRef env.formData -- parsed from query string by server
 

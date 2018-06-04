@@ -12,6 +12,7 @@ import LocalCooking.Dependencies.AuthToken (AuthTokenFailure (AuthTokenLoginFail
 import LocalCooking.Links (ThirdPartyLoginReturnLinks (..))
 import LocalCooking.Links.Class (registerLink, toLocation, class LocalCookingSiteLinks, class ToLocation)
 import LocalCooking.Common.User.Password (HashedPassword, hashPassword)
+import LocalCooking.Semantics.Common (Login (..))
 import Facebook.Types (FacebookClientId)
 import Facebook.Call (FacebookLoginLink (..), facebookLoginLinkToURI)
 import Facebook.State (FacebookLoginState (..))
@@ -67,7 +68,7 @@ loginDialog :: forall eff siteLinks userDetails userDetailsLinks
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => ToLocation siteLinks
             => LocalCookingParams siteLinks userDetails (Effects eff)
-            -> { loginDialogQueue     :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
+            -> { loginDialogQueue     :: OneIO.IOQueues (Effects eff) Unit (Maybe Login)
                , loginCloseQueue      :: One.Queue (write :: WRITE) (Effects eff) Unit
                , passwordVerifyUnauthQueues :: PasswordVerifyUnauthSparrowClientQueues (Effects eff)
                , errorMessageQueue    :: One.Queue (write :: WRITE) (Effects eff) SnackbarMessage
@@ -162,7 +163,7 @@ loginDialog
             (PasswordVerifyUnauth {email,password: hashedPassword})
           case mVerify of -- FIXME nonexistent auth token error message?
             Just JSONUnit -> do
-              pure (Just {email,password: hashedPassword}) -- FIXME delay until other queues are finished - user details, auth token, etc.
+              pure $ Just $ Login {email,password: hashedPassword} -- FIXME delay until other queues are finished - user details, auth token, etc.
             _ -> do
               -- liftEff $ case mVerify of
               --   Nothing ->
