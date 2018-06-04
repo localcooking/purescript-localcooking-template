@@ -2,6 +2,9 @@ module LocalCooking.Spec.Topbar where
 
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation, toLocation, rootLink, getUserDetailsLink, userDetailsLink)
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
+import LocalCooking.Common.User.Password (HashedPassword)
+import LocalCooking.Dependencies.AuthToken (AuthTokenInitIn (AuthTokenInitInLogin))
+import LocalCooking.Semantics.Common (Login (..))
 import LocalCooking.User.Class (class UserDetails, getEmailAddress)
 import LocalCooking.Types.Params (LocalCookingParams, LocalCookingState, LocalCookingAction, initLocalCookingState, performActionLocalCooking, whileMountedLocalCooking)
 
@@ -12,7 +15,9 @@ import Data.URI.Location (Location)
 import Data.UUID (GENUUID)
 import Data.Maybe (Maybe (..))
 import Data.Lens (Lens', Prism', lens, prism')
+import Text.Email.Validate (EmailAddress)
 import Text.Email.Validate as Email
+import Control.Monad.Base (liftBase)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
 import Control.Monad.Eff.Unsafe (unsafeCoerceEff, unsafePerformEff)
@@ -38,6 +43,7 @@ import MaterialUI.IconButton as IconButton
 import MaterialUI.Icons.Menu (menuIcon)
 
 import Queue.One (WRITE, Queue, putQueue)
+import Queue.One.Aff as OneIO
 import IxSignal.Internal (IxSignal)
 
 
@@ -49,7 +55,7 @@ initialState :: forall siteLinks userDetails
 initialState = id
 
 data Action siteLinks userDetails
-  = OpenLogin
+  = AttemptLogin
   | ClickedMobileMenuButton
   | Clicked siteLinks
   | LocalCookingAction (LocalCookingAction siteLinks userDetails)
@@ -75,7 +81,9 @@ spec :: forall eff siteLinks userDetailsLinks userDetails
      => ToLocation siteLinks
      => UserDetails userDetails
      => LocalCookingParams siteLinks userDetails (Effects eff)
-     -> { openLogin :: Eff (Effects eff) Unit
+     -> { -- openLogin :: Eff (Effects eff) Unit
+          loginQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
+        , authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
         , mobileMenuButtonSignal :: Queue (write :: WRITE) (Effects eff) Unit
         , imageSrc :: Location
         , buttons :: { toURI :: Location -> URI
@@ -89,14 +97,20 @@ spec :: forall eff siteLinks userDetailsLinks userDetails
      -> T.Spec (Effects eff) (State siteLinks userDetails) Unit (Action siteLinks userDetails)
 spec
   params@{siteLinks,toURI}
-  { openLogin
+  { loginQueue -- openLogin
+  , authTokenInitIn
   , mobileMenuButtonSignal
   , imageSrc
   , buttons
   } = T.simpleSpec performAction render
   where
     performAction action props state = case action of
-      OpenLogin -> liftEff openLogin
+      AttemptLogin -> do -- liftEff openLogin
+        mEmailPassword <- liftBase (OneIO.callAsync loginQueue unit)
+        case mEmailPassword of
+          Nothing -> pure unit
+          -- TODO FIXME should login dialog just return a Login? lmoa
+          Just ep -> liftEff $ authTokenInitIn $ AuthTokenInitInLogin $ Login ep
       ClickedMobileMenuButton -> liftEff (putQueue mobileMenuButtonSignal unit)
       Clicked x -> liftEff (siteLinks x)
       LocalCookingAction a -> performActionLocalCooking getLCState a props state
@@ -132,7 +146,7 @@ spec
                Nothing ->
                 [ button
                   { color: Button.inherit
-                  , onTouchTap: mkEffFn1 \_ -> dispatch OpenLogin
+                  , onTouchTap: mkEffFn1 \_ -> dispatch AttemptLogin
                   } [R.text "Login"]
                 ]
                Just userDetails ->
@@ -156,7 +170,8 @@ topbar :: forall eff siteLinks userDetailsLinks userDetails
        => ToLocation siteLinks
        => UserDetails userDetails
        => LocalCookingParams siteLinks userDetails (Effects eff)
-       -> { openLogin :: Eff (Effects eff) Unit
+       -> { loginQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
+          , authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
           , mobileMenuButtonSignal :: Queue (write :: WRITE) (Effects eff) Unit
           , imageSrc :: Location
           , buttons :: { toURI :: Location -> URI
@@ -169,7 +184,8 @@ topbar :: forall eff siteLinks userDetailsLinks userDetails
           } -> R.ReactElement
 topbar
   params
-  { openLogin
+  { loginQueue -- openLogin
+  , authTokenInitIn
   , mobileMenuButtonSignal
   , imageSrc
   , buttons
@@ -177,7 +193,8 @@ topbar
   let {spec:reactSpec,dispatcher} = T.createReactSpec
         ( spec
           params
-          { openLogin
+          { loginQueue -- openLogin
+          , authTokenInitIn
           , mobileMenuButtonSignal
           , imageSrc
           , buttons

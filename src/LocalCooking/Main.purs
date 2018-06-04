@@ -380,7 +380,52 @@ defaultMain
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
     dependencies depQueues deps
 
+  -- Auth Token singleton dependency mounting
+  authTokenDeltaInQueue <- One.newQueue
+  authTokenInitInQueue <- One.newQueue
+  authTokenKillificator <- One.newQueue
 
+  let authTokenOnDeltaOut deltaOut = case deltaOut of
+        AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal
+      authTokenOnInitOut mInitOut = case mInitOut of
+        Nothing -> do
+          IxSignal.set Nothing authTokenSignal
+          One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthTokenLoginFailure)
+          One.putQueue authTokenKillificator unit
+        Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
+          AuthTokenInitOutSuccess authToken -> do
+            IxSignal.set (Just authToken) authTokenSignal
+          AuthTokenInitOutFailure e -> do
+            IxSignal.set Nothing authTokenSignal
+            One.putQueue errorMessageQueue (SnackbarMessageAuthFailure e)
+            One.putQueue authTokenKillificator unit
+
+  killAuthTokenSub <- mountSparrowClientQueuesSingleton dependenciesQueues.authTokenQueues.authTokenQueues
+    authTokenDeltaInQueue authTokenInitInQueue authTokenOnDeltaOut authTokenOnInitOut
+  One.onQueue authTokenKillificator \_ -> killAuthTokenSub
+
+  -- Top-level delta in issuer
+  let authTokenDeltaIn :: AuthTokenDeltaIn -> Eff (Effects eff) Unit
+      authTokenDeltaIn deltaIn = do
+        One.writeQueue authTokenDeltaInQueue deltaIn
+        case deltaIn of
+          AuthTokenDeltaInLogout -> killAuthTokenSub
+          _ -> pure unit
+
+      authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
+      authTokenInitIn = One.writeRef authTokenInitInQueue
+
+
+  -- Handle preliminary auth token
+  case preliminaryAuthToken of
+    PreliminaryAuthToken Nothing -> pure unit
+    PreliminaryAuthToken (Just eErr) -> case eErr of
+      Right prescribedAuthToken ->
+        authTokenInitIn (AuthTokenInitInExists {exists: prescribedAuthToken})
+      Left e -> -- FIXME ...needs timeout?
+        One.putQueue errorMessageQueue $ SnackbarMessageAuthFailure e
+
+  
   -- Dialog's queue
   ( loginCloseQueue :: One.Queue (write :: WRITE) (Effects eff) Unit
     ) <- writeOnly <$> One.newQueue
@@ -443,7 +488,6 @@ defaultMain
         app
           params
           { development: env.development
-          , preliminaryAuthToken
           , errorMessageQueue
           , loginCloseQueue
           , initFormDataRef

@@ -32,6 +32,7 @@ import Data.Either (Either (..))
 import Data.Lens (Lens', Prism', lens, prism')
 import Data.Generic (class Generic)
 import Text.Email.Validate (EmailAddress)
+import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Uncurried (mkEffFn1)
@@ -81,11 +82,7 @@ initialState :: forall siteLinks userDetails
 initialState = id
 
 
-data Action siteLinks userDetails
-  = Logout
-  | AttemptLogin
-  | CallAuthToken AuthTokenInitIn
-  | LocalCookingAction (LocalCookingAction siteLinks userDetails)
+type Action siteLinks userDetails = LocalCookingAction siteLinks userDetails
 
 
 type Effects eff =
@@ -105,9 +102,7 @@ getLCState :: forall siteLinks userDetails. Lens' (State siteLinks userDetails) 
 getLCState = lens id (\_ x -> x)
 
 getLCAction :: forall siteLinks userDetails. Prism' (Action siteLinks userDetails) (LocalCookingAction siteLinks userDetails)
-getLCAction = prism' LocalCookingAction $ case _ of
-  LocalCookingAction x -> Just x
-  _ -> Nothing
+getLCAction = prism' id Just
 
 
 spec :: forall eff siteLinks userDetailsLinks userDetails siteQueues
@@ -123,6 +118,8 @@ spec :: forall eff siteLinks userDetailsLinks userDetails siteQueues
         , errorMessageQueue   :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
         , initFormDataRef     :: Ref (Maybe FacebookLoginUnsavedFormData)
         , dependenciesQueues  :: Queues siteQueues (Effects eff)
+        , authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
+        , authTokenDeltaIn :: AuthTokenDeltaIn -> Eff (Effects eff) Unit
         , dialog ::
           { loginQueue         :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
           , loginCloseQueue    :: One.Queue (write :: WRITE) (Effects eff) Unit
@@ -152,6 +149,8 @@ spec
   { development
   , errorMessageQueue
   , dependenciesQueues  -- : dependencies@{authTokenQueues:{deltaIn: authTokenQueuesDeltaIn}}
+  , authTokenInitIn
+  , authTokenDeltaIn
   , dialog
   , templateArgs: templateArgs@{palette,content,userDetails}
   , env
@@ -159,56 +158,58 @@ spec
   , initFormDataRef
   } = T.simpleSpec performAction render
   where
-    performAction action props state = case action of
-      Logout -> liftEff $ do
-        siteLinks rootLink
-        One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
-        void $ setTimeout 500 $
-          One.putQueue errorMessageQueue $ SnackbarMessageRedirect RedirectLogout
-        IxSignal.set Nothing authTokenSignal -- FIXME sure this is needed...?
-        -- why doesn't the sparrow dependency bind to this automatically?
-      AttemptLogin -> do
-        mEmailPassword <- liftBase (OneIO.callAsync dialog.loginQueue unit)
-        case mEmailPassword of
-          Nothing -> pure unit
-          Just {email,password} -> do
-            let initIn = AuthTokenInitInLogin {email,password}
-            -- FIXME feels shitty - don't use components for app semantics
-            performAction (CallAuthToken initIn) props state
-      CallAuthToken initIn -> do
+    performAction action props state = -- case action of
+      performActionLocalCooking getLCState action props state
+      -- Logout -> liftEff $ do
+      --   siteLinks rootLink
+      --   One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
+      --   void $ setTimeout 500 $
+      --     One.putQueue errorMessageQueue $ SnackbarMessageRedirect RedirectLogout
+      --   IxSignal.set Nothing authTokenSignal -- FIXME sure this is needed...?
+      --   -- why doesn't the sparrow dependency bind to this automatically?
+      -- AttemptLogin -> do
+      --   mEmailPassword <- liftBase (OneIO.callAsync dialog.loginQueue unit)
+      --   case mEmailPassword of
+      --     Nothing -> pure unit
+      --     Just {email,password} -> do
+      --       let initIn = AuthTokenInitInLogin {email,password}
+      --       -- FIXME feels shitty - don't use components for app semantics
+      --       performAction (CallAuthToken initIn) props state
+      -- CallAuthToken initIn -> do
         -- FIXME should this be done in Main? Seems kinda silly, because this is only
         -- used by PreliminaryAuthToken... Shit, should there be a singleton instance of
         -- this process, s.t. login dialogs can call the same process as well, and logouts
         -- invoke the same process' deltaIn? The queues are just a convenient interface,
         -- not a representation of the running subscription in total - each invocation of
         -- a queue opens a new sub. Singleton deps might be a thing for clients?
-        let onDeltaOut deltaOut = case deltaOut of
-              AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal
-        mInitOut <- liftBase (callSparrowClientQueues dependencies.authTokenQueues onDeltaOut initIn)
-        liftEff $ do
-          case mInitOut of
-            Nothing -> do
-              IxSignal.set Nothing authTokenSignal
-              One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthTokenLoginFailure)
-            Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
-              AuthTokenInitOutSuccess authToken -> do
-                IxSignal.set (Just authToken) authTokenSignal
-              AuthTokenInitOutFailure e -> do
-                unsubscribe
-                IxSignal.set Nothing authTokenSignal
-                One.putQueue errorMessageQueue (SnackbarMessageAuthFailure e)
-      LocalCookingAction a -> do
-        -- liftEff $ log $ "Received message...? " <> show a
-        performActionLocalCooking getLCState a props state
+      --   let onDeltaOut deltaOut = case deltaOut of
+      --         AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal
+      --   mInitOut <- liftBase (callSparrowClientQueues dependencies.authTokenQueues onDeltaOut initIn)
+      --   liftEff $ do
+      --     case mInitOut of
+      --       Nothing -> do
+      --         IxSignal.set Nothing authTokenSignal
+      --         One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthTokenLoginFailure)
+      --       Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
+      --         AuthTokenInitOutSuccess authToken -> do
+      --           IxSignal.set (Just authToken) authTokenSignal
+      --         AuthTokenInitOutFailure e -> do
+      --           unsubscribe
+      --           IxSignal.set Nothing authTokenSignal
+      --           One.putQueue errorMessageQueue (SnackbarMessageAuthFailure e)
+      -- LocalCookingAction a -> do
+      --   -- liftEff $ log $ "Received message...? " <> show a
+      --   performActionLocalCooking getLCState a props state
 
 
     render :: T.Render (State siteLinks userDetails) Unit (Action siteLinks userDetails)
     render dispatch props state children = template $
       [ topbar
         params
-        { openLogin: unsafeCoerceEff $ dispatch AttemptLogin -- FIXME why not just pack
+        { loginQueue: dialog.loginQueue -- openLogin: unsafeCoerceEff $ dispatch AttemptLogin -- FIXME why not just pack
           -- the dialog queue into the topbar? Should the sparrow dep queue also go there,
           -- too? Using components to organize business logic feels shitty
+        , authTokenInitIn
         , mobileMenuButtonSignal: writeOnly mobileMenuButtonSignal
         , imageSrc: templateArgs.topbar.imageSrc
         , buttons: templateArgs.topbar.buttons
@@ -316,7 +317,8 @@ spec
                             <>
                           [ listItem
                             { button: true
-                            , onClick: mkEffFn1 \_ -> dispatch Logout
+                            , onClick: mkEffFn1 \_ -> pure unit -- dispatch Logout
+                              -- FIXME goddamnit.    
                               -- FIXME feels weird - shouldn't this be its own sidebar component?
                             }
                             [ listItemText
@@ -411,11 +413,13 @@ app :: forall eff siteLinks userDetailsLinks userDetails siteQueues
     => LocalCookingParams siteLinks userDetails (Effects eff)
     -> { development          :: Boolean
        , env                  :: Env
-       , preliminaryAuthToken :: PreliminaryAuthToken
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
        , loginCloseQueue      :: One.Queue (write :: WRITE) (Effects eff) Unit
        , initFormDataRef      :: Ref (Maybe FacebookLoginUnsavedFormData)
        , dependenciesQueues :: Queues siteQueues (Effects eff)
+       -- FIXME TODO restrict authTokenQueues from being visible
+       , authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
+       , authTokenDeltaIn :: AuthTokenDeltaIn -> Eff (Effects eff) Unit
        , templateArgs ::
           { content :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
           , topbar ::
@@ -439,10 +443,11 @@ app :: forall eff siteLinks userDetailsLinks userDetails siteQueues
 app
   params
   { development
-  , preliminaryAuthToken
   , errorMessageQueue
   , loginCloseQueue
   , dependenciesQueues
+  , authTokenInitIn
+  , authTokenDeltaIn
   , templateArgs
   , env
   , extendedNetwork
@@ -455,6 +460,8 @@ app
           { development
           , errorMessageQueue
           , dependenciesQueues
+          , authTokenInitIn
+          , authTokenDeltaIn
           , dialog:
             { loginQueue: loginDialogQueue
             , loginCloseQueue
@@ -471,23 +478,9 @@ app
           whileMountedLocalCooking
             params
             "LocalCooking.Spec"
-            LocalCookingAction
+            id
             (\this -> unsafeCoerceEff <<< dispatcher this)
-          $ reactSpec
-            { componentWillMount = \this -> do
-              case preliminaryAuthToken of
-                PreliminaryAuthToken Nothing -> pure unit
-                PreliminaryAuthToken (Just eErr) -> case eErr of
-                  -- Call the authToken resource when the spec starts, using the preliminary auth token
-                  -- FIXME should this be in Main? Not when the document is mounting?
-                  Right prescribedAuthToken ->
-                    -- FIXME using the components Action? Hmm..
-                    unsafeCoerceEff $ dispatcher this $ CallAuthToken $
-                      AuthTokenInitInExists {exists: prescribedAuthToken}
-                  Left e ->
-                    unsafeCoerceEff $ One.putQueue errorMessageQueue $ SnackbarMessageAuthFailure e
-              reactSpec.componentWillMount this
-            }
+            reactSpec
 
   in  {spec: reactSpec', dispatcher}
   where
