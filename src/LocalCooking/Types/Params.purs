@@ -1,6 +1,5 @@
 module LocalCooking.Types.Params where
 
-import LocalCooking.Window (WindowSize)
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 
 import Prelude
@@ -19,10 +18,12 @@ import IxSignal.Internal as IxSignal
 
 import React (ReactSpec, ReactThis)
 import React.Signal.WhileMounted as Signal
+import DOM.HTML.Window.Extra (WindowSize)
 import Thermite as T
 
 
 
+-- | Universal arguments for each React component process
 type LocalCookingParams siteLinks userDetails eff =
   { toURI             :: Location -> URI
   , siteLinks         :: siteLinks -> Eff eff Unit
@@ -33,6 +34,7 @@ type LocalCookingParams siteLinks userDetails eff =
   }
 
 
+-- | Storable state for each Thermite action schema
 type LocalCookingState siteLinks userDetails =
   { currentPage :: siteLinks
   , windowSize  :: WindowSize
@@ -41,6 +43,7 @@ type LocalCookingState siteLinks userDetails =
   }
 
 
+-- | Obtain state from params
 initLocalCookingState :: forall siteLinks userDetails eff
                        . LocalCookingParams siteLinks userDetails (ref :: REF | eff)
                       -> Eff (ref :: REF | eff) (LocalCookingState siteLinks userDetails)
@@ -57,6 +60,7 @@ initLocalCookingState {currentPageSignal,windowSizeSignal,authTokenSignal,userDe
     }
 
 
+-- | Modifications to state
 data LocalCookingAction siteLinks userDetails
   = ChangedCurrentPage siteLinks
   | ChangedWindowSize WindowSize
@@ -76,6 +80,7 @@ type Effects eff =
   | eff)
 
 
+-- | Enact modifications to state
 performActionLocalCooking :: forall siteLinks userDetails eff state action props
                            . Lens' state (LocalCookingState siteLinks userDetails)
                           -> T.PerformAction eff state props (LocalCookingAction siteLinks userDetails)
@@ -89,6 +94,7 @@ performActionLocalCooking getLCState a props state =
   in  void (T.cotransform (getLCState %~ go))
 
 
+-- | Bind Thermite action modifications to the React component signals
 whileMountedLocalCooking :: forall siteLinks userDetails eff state action props render
                           . LocalCookingParams siteLinks userDetails (Effects eff)
                          -> String

@@ -1,9 +1,8 @@
 module LocalCooking.Spec.Topbar where
 
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation, toLocation, rootLink, getUserDetailsLink, userDetailsLink)
-import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
-import LocalCooking.User (class UserDetails, getEmailAddress)
+import LocalCooking.User.Class (class UserDetails, getEmailAddress)
 import LocalCooking.Types.Params (LocalCookingParams, LocalCookingState, LocalCookingAction, initLocalCookingState, performActionLocalCooking, whileMountedLocalCooking)
 
 import Prelude
@@ -26,6 +25,7 @@ import React as R
 import React.DOM as R
 import React.DOM.Props as RP
 import React.DOM.Props.PreventDefault (preventDefault)
+import DOM.HTML.Window.Extra (WindowSize (..))
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Toolbar (toolbar)

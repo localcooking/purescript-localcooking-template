@@ -10,7 +10,6 @@ import LocalCooking.Spec.Drawers.LeftMenu (leftMenu)
 import LocalCooking.Spec.Snackbar (messages, SnackbarMessage (..), RedirectError (RedirectLogout))
 import LocalCooking.Spec.Flags.USA (usaFlag, usaFlagViewBox)
 import LocalCooking.Spec.Flags.Colorado (coloradoFlag, coloradoFlagViewBox)
-import LocalCooking.Window (WindowSize (Laptop))
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Types.Params (LocalCookingParams, LocalCookingState, LocalCookingAction, initLocalCookingState, performActionLocalCooking, whileMountedLocalCooking)
 import LocalCooking.Links.Class (registerLink, rootLink, userDetailsLink, getUserDetailsLink, userDetailsGeneralLink, userDetailsSecurityLink, class LocalCookingSiteLinks, class ToLocation)
@@ -20,7 +19,7 @@ import LocalCooking.Dependencies.AuthToken
   , AuthTokenInitIn (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenDeltaOut (..)
   , PreliminaryAuthToken (..), AuthTokenFailure (AuthTokenLoginFailure))
 import LocalCooking.Dependencies (Queues)
-import LocalCooking.User (class UserDetails)
+import LocalCooking.User.Class (class UserDetails)
 import Facebook.State (FacebookLoginUnsavedFormData)
 
 import Sparrow.Client.Queue (callSparrowClientQueues)
@@ -62,6 +61,7 @@ import MaterialUI.ListItemText (listItemText)
 import MaterialUI.Types (createStyles)
 import DOM (DOM)
 import DOM.HTML.Types (HISTORY)
+import DOM.HTML.Window.Extra (WindowSize (Laptop))
 import Browser.WebStorage (WEB_STORAGE)
 import Crypto.Scrypt (SCRYPT)
 
@@ -151,7 +151,7 @@ spec
   params@{siteLinks,authTokenSignal}
   { development
   , errorMessageQueue
-  , dependencies: dependencies@{authTokenQueues:{deltaIn: authTokenQueuesDeltaIn}}
+  , dependenciesQueues  -- : dependencies@{authTokenQueues:{deltaIn: authTokenQueuesDeltaIn}}
   , dialog
   , templateArgs: templateArgs@{palette,content,userDetails}
   , env
@@ -165,15 +165,23 @@ spec
         One.putQueue authTokenQueuesDeltaIn AuthTokenDeltaInLogout
         void $ setTimeout 500 $
           One.putQueue errorMessageQueue $ SnackbarMessageRedirect RedirectLogout
-        IxSignal.set Nothing authTokenSignal
+        IxSignal.set Nothing authTokenSignal -- FIXME sure this is needed...?
+        -- why doesn't the sparrow dependency bind to this automatically?
       AttemptLogin -> do
         mEmailPassword <- liftBase (OneIO.callAsync dialog.loginQueue unit)
         case mEmailPassword of
           Nothing -> pure unit
           Just {email,password} -> do
             let initIn = AuthTokenInitInLogin {email,password}
+            -- FIXME feels shitty - don't use components for app semantics
             performAction (CallAuthToken initIn) props state
       CallAuthToken initIn -> do
+        -- FIXME should this be done in Main? Seems kinda silly, because this is only
+        -- used by PreliminaryAuthToken... Shit, should there be a singleton instance of
+        -- this process, s.t. login dialogs can call the same process as well, and logouts
+        -- invoke the same process' deltaIn? The queues are just a convenient interface,
+        -- not a representation of the running subscription in total - each invocation of
+        -- a queue opens a new sub. Singleton deps might be a thing for clients?
         let onDeltaOut deltaOut = case deltaOut of
               AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal
         mInitOut <- liftBase (callSparrowClientQueues dependencies.authTokenQueues onDeltaOut initIn)
@@ -190,7 +198,7 @@ spec
                 IxSignal.set Nothing authTokenSignal
                 One.putQueue errorMessageQueue (SnackbarMessageAuthFailure e)
       LocalCookingAction a -> do
-        liftEff $ log $ "Received message...? " <> show a
+        -- liftEff $ log $ "Received message...? " <> show a
         performActionLocalCooking getLCState a props state
 
 
@@ -198,13 +206,16 @@ spec
     render dispatch props state children = template $
       [ topbar
         params
-        { openLogin: unsafeCoerceEff $ dispatch AttemptLogin
+        { openLogin: unsafeCoerceEff $ dispatch AttemptLogin -- FIXME why not just pack
+          -- the dialog queue into the topbar? Should the sparrow dep queue also go there,
+          -- too? Using components to organize business logic feels shitty
         , mobileMenuButtonSignal: writeOnly mobileMenuButtonSignal
         , imageSrc: templateArgs.topbar.imageSrc
         , buttons: templateArgs.topbar.buttons
         }
       ] <> mainContent <>
-      [ loginDialog
+      [ -- FIXME pack dialogs into a single component
+        loginDialog
         params
         { loginDialogQueue: dialog.loginQueue
         , loginCloseQueue: dialog.loginCloseQueue
@@ -245,6 +256,7 @@ spec
         mobileMenuButtonSignal :: One.Queue (read :: READ, write :: WRITE) (Effects eff) Unit
         mobileMenuButtonSignal = unsafePerformEff One.newQueue
 
+        -- FIXME content should be a component
         mainContent :: Array R.ReactElement
         mainContent =
           [ R.main [RP.style {marginTop: "4.5em"}]
@@ -268,6 +280,7 @@ spec
               } $ case getUserDetailsLink state.currentPage of
                 Just mUserDetails ->
                   -- TODO responsive design for side-drawer navigation
+                  -- FIXME User details component
                   [ R.div [RP.style {position: "relative"}]
                     [ Drawer.withStyles
                       (\_ -> {paper: createStyles {position: "relative", width: "200px", zIndex: 1000}})
@@ -304,6 +317,7 @@ spec
                           [ listItem
                             { button: true
                             , onClick: mkEffFn1 \_ -> dispatch Logout
+                              -- FIXME feels weird - shouldn't this be its own sidebar component?
                             }
                             [ listItemText
                               { primary: "Logout"
@@ -345,7 +359,8 @@ spec
                   | otherwise ->
                       content params
             ]
-          , typography
+          , -- FIXME footer component? Nah, just pack in content
+            typography
             { variant: Typography.subheading
             , style: createStyles {color: "rgba(255,255,255,0.5)", marginTop: "5em"}
             , align: Typography.center
@@ -386,7 +401,7 @@ spec
 
 
 
-app :: forall eff siteLinks userDetailsLinks userDetails
+app :: forall eff siteLinks userDetailsLinks userDetails siteQueues
      . LocalCookingSiteLinks siteLinks userDetailsLinks
     => Eq siteLinks
     => ToLocation siteLinks
@@ -400,13 +415,7 @@ app :: forall eff siteLinks userDetailsLinks userDetails
        , errorMessageQueue    :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
        , loginCloseQueue      :: One.Queue (write :: WRITE) (Effects eff) Unit
        , initFormDataRef      :: Ref (Maybe FacebookLoginUnsavedFormData)
-       , dependencies ::
-          { authTokenQueues      :: AuthTokenSparrowClientQueues (Effects eff)
-          , registerQueues       :: RegisterSparrowClientQueues (Effects eff)
-          , userEmailQueues      :: UserEmailSparrowClientQueues (Effects eff)
-          , securityQueues       :: SecuritySparrowClientQueues (Effects eff)
-          , passwordVerifyQueues :: PasswordVerifySparrowClientQueues (Effects eff)
-          }
+       , dependenciesQueues :: Queues siteQueues (Effects eff)
        , templateArgs ::
           { content :: LocalCookingParams siteLinks userDetails (Effects eff) -> Array R.ReactElement
           , topbar ::
@@ -433,7 +442,7 @@ app
   , preliminaryAuthToken
   , errorMessageQueue
   , loginCloseQueue
-  , dependencies
+  , dependenciesQueues
   , templateArgs
   , env
   , extendedNetwork
@@ -445,7 +454,7 @@ app
           params
           { development
           , errorMessageQueue
-          , dependencies
+          , dependenciesQueues
           , dialog:
             { loginQueue: loginDialogQueue
             , loginCloseQueue
@@ -470,7 +479,9 @@ app
                 PreliminaryAuthToken Nothing -> pure unit
                 PreliminaryAuthToken (Just eErr) -> case eErr of
                   -- Call the authToken resource when the spec starts, using the preliminary auth token
+                  -- FIXME should this be in Main? Not when the document is mounting?
                   Right prescribedAuthToken ->
+                    -- FIXME using the components Action? Hmm..
                     unsafeCoerceEff $ dispatcher this $ CallAuthToken $
                       AuthTokenInitInExists {exists: prescribedAuthToken}
                   Left e ->
@@ -480,6 +491,7 @@ app
 
   in  {spec: reactSpec', dispatcher}
   where
+    -- FIXME dialog queues - would there be any spawned by a dep's async incoming?
     loginDialogQueue :: OneIO.IOQueues (Effects eff) Unit (Maybe {email :: EmailAddress, password :: HashedPassword})
     loginDialogQueue = unsafePerformEff OneIO.newIOQueues
 

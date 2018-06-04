@@ -5,7 +5,6 @@ import LocalCooking.Spec.Form.Submit as Submit
 import LocalCooking.Spec.Snackbar (SnackbarMessage)
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Types.Params (LocalCookingParams, LocalCookingAction, LocalCookingState, performActionLocalCooking, whileMountedLocalCooking, initLocalCookingState)
-import LocalCooking.Window (WindowSize (..))
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, class ToLocation)
 
 import Prelude
@@ -27,6 +26,7 @@ import React as R
 import React.DOM as R
 import React.Queue.WhileMounted as Queue
 import DOM (DOM)
+import DOM.HTML.Window.Extra (WindowSize (..))
 
 import MaterialUI.Types (createStyles)
 import MaterialUI.Dialog (dialog)

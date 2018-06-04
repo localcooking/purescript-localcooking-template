@@ -3,21 +3,13 @@ module LocalCooking.Main where
 import LocalCooking.Spec (app)
 import LocalCooking.Types.Env (Env)
 import LocalCooking.Types.Params (LocalCookingParams)
-import LocalCooking.Window (widthToWindowSize)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..), UserEmailError (..))
 import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
 import LocalCooking.Dependencies (dependencies, newQueues, Queues)
--- import LocalCooking.Client.Dependencies.AuthToken (AuthTokenSparrowClientQueues, PreliminaryAuthToken (..))
--- import LocalCooking.Client.Dependencies.Register (RegisterSparrowClientQueues)
--- import LocalCooking.Client.Dependencies.UserEmail (UserEmailSparrowClientQueues)
--- import LocalCooking.Client.Dependencies.UserRoles (UserRolesSparrowClientQueues)
--- import LocalCooking.Client.Dependencies.Security (SecuritySparrowClientQueues)
--- import LocalCooking.Client.Dependencies.PasswordVerify (PasswordVerifySparrowClientQueues)
--- import LocalCooking.Client.Dependencies.AccessToken.Generic (AuthInitIn (..), AuthInitOut (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Common.User.Role (UserRole)
-import LocalCooking.User (class UserDetails)
+import LocalCooking.User.Class (class UserDetails)
 import Facebook.State (FacebookLoginUnsavedFormData)
 
 import Sparrow.Client (allocateDependencies, unpackClient)
@@ -57,6 +49,7 @@ import MaterialUI.MuiThemeProvider (ColorPalette)
 import DOM (DOM)
 import DOM.HTML (window)
 import DOM.HTML.Window (location, document, history)
+import DOM.HTML.Window.Extra (widthToWindowSize)
 import DOM.HTML.Location (hostname, protocol, port)
 import DOM.HTML.Document (body)
 import DOM.HTML.Document.Extra (setDocumentTitle)
@@ -97,39 +90,39 @@ type Effects eff =
 
 
 
-type LocalCookingArgs siteLinks userDetails eff =
-  { content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
+type LocalCookingArgs siteLinks userDetails siteQueues eff =
+  { content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -- ^ Primary content process
   , topbar ::
-    { imageSrc :: Location
+    { imageSrc :: Location -- ^ Nify colored logo
     , buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
     }
   , leftDrawer ::
-    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
+    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -- ^ Mobile only
     }
   , userDetails ::
-    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
+    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -- ^ Side navigation
     , content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
-    , obtain  ::
+    , obtain  :: -- ^ Given a method to obtain a few fields, obtain the entire struct
       { email :: ParAff eff (Maybe EmailAddress)
       , roles :: ParAff eff (Array UserRole)
       } -> Aff eff (Maybe userDetails)
     }
-  , newSiteQueues :: Eff eff siteQueues
-  , deps          :: siteQueues -> SparrowClientT eff (Eff eff) Unit -- FIXME TODO MonadBaseControl?
-  , env           :: Env
-  , initSiteLinks :: siteLinks
-  , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks
-  , palette ::
+  , newSiteQueues :: Eff eff siteQueues -- ^ New subsidiary-site specific sparrow dependency queues
+  , deps          :: siteQueues -> SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
+  , initSiteLinks :: siteLinks -- ^ The page opened
+  , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks -- ^ Additional redirection rules per-site
+  , palette :: -- ^ Colors
     { primary   :: ColorPalette
     , secondary :: ColorPalette
     }
-  , extendedNetwork :: Array R.ReactElement
+  , extendedNetwork :: Array R.ReactElement -- ^ Buttons
+  , env :: Env -- ^ Provided by Server.FrontendEnv
   }
 
 
 
 -- | Top-level entry point to the application
-defaultMain :: forall eff siteLinks userDetailsLinks userDetails
+defaultMain :: forall eff siteLinks userDetailsLinks userDetails siteQueues
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => Eq siteLinks
             => ToLocation siteLinks
@@ -138,7 +131,7 @@ defaultMain :: forall eff siteLinks userDetailsLinks userDetails
             => UserDetails userDetails
             => Generic siteLinks
             => Generic userDetails
-            => LocalCookingArgs siteLinks userDetails (Effects eff)
+            => LocalCookingArgs siteLinks userDetails siteQueues (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain
   { newSiteQueues
@@ -157,14 +150,13 @@ defaultMain
   injectTapEvent
   _ <- registerShim
 
-
   -- DOM references
   w <- window
   l <- location w
   h <- history w
   d <- document w
 
-  -- initial browser metadata values
+  -- given initial values from browser metadata
   scheme <- Just <<< Scheme <<< String.takeWhile (\c -> c /= ':') <$> protocol l
   authority <- do
     host <- hostname l
@@ -172,7 +164,7 @@ defaultMain
     p <- case parseInt p' (toRadix 10) of
       Nothing ->  pure Nothing -- undefined <$ error "Somehow couldn't parse port"
       Just x -> pure (Just (Port x))
-    pure $ Authority Nothing [Tuple (NameAddress host) p]
+    pure (Authority Nothing [Tuple (NameAddress host) p])
 
 
 
@@ -184,18 +176,18 @@ defaultMain
 
   -- Mutable form data reference for first-loaded component that obtains it
   ( initFormDataRef :: Ref (Maybe FacebookLoginUnsavedFormData)
-    ) <- newRef env.formData
+    ) <- newRef env.formData -- parsed from query string by server
 
 
   -- Global emitted snackbar messages
   ( errorMessageQueue :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
     ) <- One.newQueue
 
-  -- Global AuthToken value
+  -- Global AuthToken value -- FIXME start as Nothing? Can't pack PreliminaryAuthToken on processing?
   ( authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
     ) <- IxSignal.make Nothing
 
-  -- Global userDetails value
+  -- Global userDetails value -- FIXME ditto
   ( userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
     ) <- IxSignal.make Nothing
 
@@ -205,21 +197,21 @@ defaultMain
     ) <- do
     initSiteLink <- do
       -- initial redirects
-      let x = initSiteLinks
+      let siteLink = initSiteLinks
           reAssign y = do
             replaceState' y h
             setDocumentTitle d $ defaultSiteLinksToDocumentTitle y
-      case getUserDetailsLink x of
+      case getUserDetailsLink siteLink of
         Just _ -> do
           case preliminaryAuthToken of
             PreliminaryAuthToken Nothing -> do
               -- in /userDetails while not logged in
-              void $ setTimeout 1000 $
+              void $ setTimeout 1000 $ -- FIXME timeouts suck ass
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
               reAssign (rootLink :: siteLinks)
               pure rootLink
-            _ -> pure x
-        _ | x == registerLink -> do
+            _ -> pure siteLink
+        _ | siteLink == registerLink -> do
           case preliminaryAuthToken of
             PreliminaryAuthToken (Just (Right _)) -> do
               -- in /register while logged in
@@ -227,11 +219,11 @@ defaultMain
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
               reAssign (rootLink :: siteLinks)
               pure rootLink
-            _ -> pure x
+            _ -> pure siteLink
           | otherwise -> do
           mUserDetails <- IxSignal.get userDetailsSignal
-          case extraRedirect x mUserDetails of
-            Nothing -> pure x
+          case extraRedirect siteLink mUserDetails of
+            Nothing -> pure siteLink
             Just y -> do
               void $ setTimeout 1000 $
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
@@ -253,7 +245,7 @@ defaultMain
             Just _ -> continue siteLink
             Nothing -> do
               -- in /userDetails while not logged in
-              void $ setTimeout 1000 $
+              void $ setTimeout 1000 $ -- FIXME timeouts suck ass
                 One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
               replaceState' (rootLink :: siteLinks) h
               continue rootLink
@@ -283,7 +275,7 @@ defaultMain
     ) <- do
     q <- One.newQueue
     One.onQueue q \(siteLink :: siteLinks) -> do
-      -- only respect changed pages
+      -- only respect changed pages -- FIXME ??
       -- y <- IxSignal.get currentPageSignal
       -- when (y /= siteLink) $ do
       let continue x = do
@@ -321,6 +313,7 @@ defaultMain
     pure (writeOnly q)
 
 
+  -- FIXME some bullshit for dealing with authTokenSignal := Nothing on load
   onceRef <- newRef false
   -- rediect rules for async logout events
   let redirectOnAuth mAuth = do
@@ -361,6 +354,8 @@ defaultMain
         Nothing -> clearAuthToken
         Just authToken -> storeAuthToken authToken
   IxSignal.subscribe localstorageOnAuth authTokenSignal
+    -- FIXME analyze the issue of having multiple auxilliary listeners on
+    -- authTokenSignal changes
 
 
   -- Global window size value
@@ -380,11 +375,13 @@ defaultMain
     pure out
 
 
+  -- Sparrow dependencies
   dependenciesQueues <- newQueues newSiteQueues
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
     dependencies depQueues deps
 
 
+  -- Dialog's queue
   ( loginCloseQueue :: One.Queue (write :: WRITE) (Effects eff) Unit
     ) <- writeOnly <$> One.newQueue
 
@@ -398,8 +395,9 @@ defaultMain
                   One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
                 Right mUserDetails -> do
                   IxSignal.set mUserDetails userDetailsSignal
-                  One.putQueue loginCloseQueue unit
+                  One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
 
+          -- Utilize userDetail's obtain method
           runAff_ resolve $ userDetails.obtain
             { email: parallel $ do
                 mInitOut <- OneIO.callAsync userEmailQueues (AuthInitIn {token: authToken, subj: JSONUnit})
@@ -425,8 +423,10 @@ defaultMain
                       pure []
             }
   IxSignal.subscribe userDetailsOnAuth authTokenSignal
+  -- FIXME analyze auxilliary authTokenSignal listeners
 
 
+  -- universal React component params
   let params :: LocalCookingParams siteLinks userDetails (Effects eff)
       params =
         { toURI : \location -> toURI {scheme, authority: Just authority, location}
@@ -458,8 +458,8 @@ defaultMain
               , content: userDetails.content
               }
             }
-          , env
           , extendedNetwork
+          , env
           }
       component = R.createClass reactSpec
   traverse_ (render (R.createFactory component props) <<< htmlElementToElement) =<< body d

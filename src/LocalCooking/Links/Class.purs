@@ -32,12 +32,13 @@ class FromLocation sym where
   fromLocation :: Location -> Either String sym
 
 
+-- | Datums supported by all subsidiary sites' user details page
 class Eq userDetailsLinks <= LocalCookingUserDetailsLinks userDetailsLinks where
   userDetailsGeneralLink :: userDetailsLinks
   userDetailsSecurityLink :: userDetailsLinks
   toUserDetailsDocumentTitle :: userDetailsLinks -> String -- ^ The prefix, i.e. `Security - `
 
-
+-- | Datums supported by all subsidary sites' top-level site links
 class ( Eq siteLinks
       , LocalCookingUserDetailsLinks userDetailsLinks
       ) <= LocalCookingSiteLinks siteLinks userDetailsLinks
@@ -51,6 +52,7 @@ class ( Eq siteLinks
   subsidiaryTitle :: Proxy siteLinks -> String -- ^ The suffix, i.e. ` Chefs`
 
 
+-- | Parse casual site-links, while allowing for others to be parsed out of this scope
 defaultSiteLinksPathParser :: forall siteLinks userDetailsLinks
                             . LocalCookingSiteLinks siteLinks userDetailsLinks
                            => Parser userDetailsLinks -> Parser siteLinks
@@ -70,6 +72,7 @@ defaultSiteLinksPathParser userDetailsLinksParser = do
     divider = char '/'
 
 
+-- | Given a site link, generate a nice browser Document Title
 defaultSiteLinksToDocumentTitle :: forall siteLinks userDetailsLinks
                                  . LocalCookingSiteLinks siteLinks userDetailsLinks
                                 => Eq siteLinks
@@ -138,4 +141,3 @@ onPopState go w =
         Right (x :: siteLinks) -> go x
   where
     onPopState' f = runEffFn2 onPopStateImpl (mkEffFn1 f) w
-
