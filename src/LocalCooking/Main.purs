@@ -1,19 +1,28 @@
 module LocalCooking.Main where
 
 import LocalCooking.Spec (app)
-import LocalCooking.Types.Env (Env)
-import LocalCooking.Types.Params (LocalCookingParams)
+-- import LocalCooking.Spec.Dialogs (newDialogQueues)
+import LocalCooking.Spec.Content.Register (RegisterUnsavedFormData (..))
+import LocalCooking.Spec.Content.UserDetails.Security (SecurityUnsavedFormData (..))
+import LocalCooking.Spec.Types.Env (Env)
+import LocalCooking.Types.ServerToClient (ServerToClient (..), serverToClient)
+import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
-import LocalCooking.Spec.Snackbar (SnackbarMessage (..), RedirectError (..), UserEmailError (..))
-import LocalCooking.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, class ToLocation, class FromLocation, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
-import LocalCooking.Dependencies (dependencies, newQueues, Queues)
+-- import LocalCooking.Spec.Snackbar (GlobalError (..), RedirectError (..), UserEmailError (..))
+import LocalCooking.Global.Error
+  (GlobalError (..), RedirectError (..), UserEmailError (..), AuthTokenFailure (..))
+import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
+import LocalCooking.Global.User.Class (class UserDetails)
+import LocalCooking.Dependencies (dependencies, newQueues, DependenciesQueues)
+import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
+import LocalCooking.Dependencies.AccessToken.Generic (AccessInitIn (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
-import LocalCooking.Common.User.Role (UserRole)
-import LocalCooking.User.Class (class UserDetails)
-import Facebook.State (FacebookLoginUnsavedFormData)
+-- import LocalCooking.Common.User.Role (UserRole)
+import LocalCooking.Semantics.Common (User)
+import Facebook.State (FacebookLoginUnsavedFormData (..))
 
 import Sparrow.Client (allocateDependencies, unpackClient)
-import Sparrow.Client.Queue (newSparrowClientQueues, newSparrowStaticClientQueues, sparrowClientQueues, sparrowStaticClientQueues)
+import Sparrow.Client.Queue (newSparrowClientQueues, newSparrowStaticClientQueues, sparrowClientQueues, sparrowStaticClientQueues, mountSparrowClientQueuesSingleton)
 import Sparrow.Types (Topic (..))
 
 import Prelude
@@ -21,7 +30,7 @@ import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple (..))
 import Data.Either (Either (..))
 import Data.URI (Authority (..), Host (NameAddress), Scheme (..), Port (..))
-import Data.URI.Location (Location, toURI)
+import Data.URI.Location (Location, toURI, class ToLocation, class FromLocation)
 import Data.String (takeWhile) as String
 import Data.Int.Parse (parseInt, toRadix)
 import Data.UUID (GENUUID)
@@ -29,7 +38,7 @@ import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Data.Generic (class Generic)
-import Text.Email.Validate (EmailAddress)
+-- import Text.Email.Validate (EmailAddress)
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, Ref, newRef, readRef, writeRef)
@@ -103,8 +112,8 @@ type LocalCookingArgs siteLinks userDetails siteQueues eff =
     { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -- ^ Side navigation
     , content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
     , obtain  :: -- ^ Given a method to obtain a few fields, obtain the entire struct
-      { email :: ParAff eff (Maybe EmailAddress)
-      , roles :: ParAff eff (Array UserRole)
+      { user  :: ParAff eff (Maybe User)
+      -- , roles :: ParAff eff (Array UserRole)
       } -> Aff eff (Maybe userDetails)
     }
   , newSiteQueues :: Eff eff siteQueues -- ^ New subsidiary-site specific sparrow dependency queues
@@ -168,20 +177,25 @@ defaultMain
 
 
 
-  -- Fetch the preliminary auth token from `env`, or LocalStorage
-  ( preliminaryAuthToken :: PreliminaryAuthToken
-    ) <- map PreliminaryAuthToken $ case env.authToken of
-      PreliminaryAuthToken Nothing -> map Right <$> getStoredAuthToken
-      PreliminaryAuthToken (Just eErrX) -> pure (Just eErrX)
-
   -- Mutable form data reference for first-loaded component that obtains it
   -- FIXME this is fucked; shouldn't really need a ref honestly
-  ( initFormDataRef :: Ref (Maybe FacebookLoginUnsavedFormData)
-    ) <- newRef env.formData -- parsed from query string by server
+  -- ( initFormDataRef :: Ref (Maybe FacebookLoginUnsavedFormData)
+  --   ) <- newRef env.formData -- parsed from query string by server
+  securityUnsavedFormData <- writeOnly <$> One.newQueue
+  registerUnsavedFormData <- writeOnly <$> One.newQueue
+  void $ setTimeout 1000 $ do
+    case serverToClient of
+      ServerToClient {formData} -> case formData of
+        Nothing -> pure unit
+        Just unsavedFormData -> case unsavedFormData of
+          FacebookLoginUnsavedFormDataSecurity xs ->
+            One.putQueue securityUnsavedFormData (SecurityUnsavedFormData xs)
+          FacebookLoginUnsavedFormDataRegister xs ->
+            One.putQueue registerUnsavedFormData (RegisterUnsavedFormData xs)
 
 
   -- Global emitted snackbar messages
-  ( errorMessageQueue :: One.Queue (read :: READ, write :: WRITE) (Effects eff) SnackbarMessage
+  ( globalErrorQueue :: One.Queue (read :: READ, write :: WRITE) (Effects eff) GlobalError
     ) <- One.newQueue
 
   -- Global AuthToken value -- FIXME start as Nothing? Can't pack PreliminaryAuthToken on processing?
@@ -191,6 +205,13 @@ defaultMain
   -- Global userDetails value -- FIXME ditto
   ( userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
     ) <- IxSignal.make Nothing
+
+  -- Fetch the preliminary auth token from `env`, or LocalStorage
+  ( preliminaryAuthToken :: PreliminaryAuthToken
+    ) <- map PreliminaryAuthToken $ case serverToClient of
+      ServerToClient {authToken} -> case authToken of
+        PreliminaryAuthToken Nothing -> map Right <$> getStoredAuthToken
+        PreliminaryAuthToken (Just eErrX) -> pure (Just eErrX)
 
 
   -- Global current page value - for `back` compatibility while being driven by `siteLinksSignal` -- should be read-only
@@ -208,7 +229,7 @@ defaultMain
             PreliminaryAuthToken Nothing -> do
               -- in /userDetails while not logged in
               void $ setTimeout 1000 $ -- FIXME timeouts suck ass
-                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
               reAssign (rootLink :: siteLinks)
               pure rootLink
             _ -> pure siteLink
@@ -217,7 +238,7 @@ defaultMain
             PreliminaryAuthToken (Just (Right _)) -> do
               -- in /register while logged in
               void $ setTimeout 1000 $
-                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
               reAssign (rootLink :: siteLinks)
               pure rootLink
             _ -> pure siteLink
@@ -227,7 +248,7 @@ defaultMain
             Nothing -> pure siteLink
             Just y -> do
               void $ setTimeout 1000 $
-                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
               reAssign y
               pure y
 
@@ -247,7 +268,7 @@ defaultMain
             Nothing -> do
               -- in /userDetails while not logged in
               void $ setTimeout 1000 $ -- FIXME timeouts suck ass
-                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
               replaceState' (rootLink :: siteLinks) h
               continue rootLink
         _ | siteLink == registerLink -> do
@@ -257,7 +278,7 @@ defaultMain
               Just _ -> do
                 -- in /register while logged in
                 void $ setTimeout 1000 $
-                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
                 replaceState' (rootLink :: siteLinks) h
                 continue rootLink
           | otherwise -> do
@@ -266,7 +287,7 @@ defaultMain
               Nothing -> continue siteLink
               Just y -> do
                 void $ setTimeout 1000 $
-                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                 continue y
 
     pure sig
@@ -292,7 +313,7 @@ defaultMain
             Nothing -> do
               -- in /userDetails while not logged in
               void $ setTimeout 1000 $
-                One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
               continue rootLink
         _ | siteLink == registerLink -> do
             mAuth <- IxSignal.get authTokenSignal
@@ -301,7 +322,7 @@ defaultMain
               Just _ -> do
                 -- in /register while logged in
                 void $ setTimeout 1000 $
-                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
                 continue rootLink
           | otherwise -> do
             mUserDetails <- IxSignal.get userDetailsSignal
@@ -309,7 +330,7 @@ defaultMain
               Nothing -> continue siteLink
               Just y -> do
                 void $ setTimeout 1000 $
-                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                 continue y
     pure (writeOnly q)
 
@@ -331,13 +352,13 @@ defaultMain
                 pure x
               when once $ do
                 void $ setTimeout 1000 $
-                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                 continue
             _ -> pure unit
           _ | siteLink == registerLink -> case mAuth of
               Just _ -> do
                 void $ setTimeout 1000 $
-                  One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectRegisterAuth)
+                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
                 continue
               _ -> pure unit
             | otherwise -> do
@@ -346,7 +367,7 @@ defaultMain
                 Nothing -> pure unit
                 Just y -> do
                   void $ setTimeout 1000 $
-                    One.putQueue errorMessageQueue (SnackbarMessageRedirect RedirectUserDetailsNoAuth)
+                    One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                   One.putQueue siteLinksSignal y
   IxSignal.subscribe redirectOnAuth authTokenSignal
 
@@ -379,7 +400,7 @@ defaultMain
   -- Sparrow dependencies
   dependenciesQueues <- newQueues newSiteQueues
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
-    dependencies depQueues deps
+    dependencies dependenciesQueues deps
 
   -- Auth Token singleton dependency mounting
   authTokenDeltaInQueue <- One.newQueue
@@ -391,14 +412,14 @@ defaultMain
       authTokenOnInitOut mInitOut = case mInitOut of
         Nothing -> do
           IxSignal.set Nothing authTokenSignal
-          One.putQueue errorMessageQueue (SnackbarMessageAuthFailure AuthTokenLoginFailure)
+          One.putQueue globalErrorQueue (GlobalErrorAuthFailure AuthTokenLoginFailure)
           One.putQueue authTokenKillificator unit
         Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
           AuthTokenInitOutSuccess authToken -> do
             IxSignal.set (Just authToken) authTokenSignal
           AuthTokenInitOutFailure e -> do
             IxSignal.set Nothing authTokenSignal
-            One.putQueue errorMessageQueue (SnackbarMessageAuthFailure e)
+            One.putQueue globalErrorQueue (GlobalErrorAuthFailure e)
             One.putQueue authTokenKillificator unit
 
   killAuthTokenSub <- mountSparrowClientQueuesSingleton dependenciesQueues.authTokenQueues.authTokenQueues
@@ -408,15 +429,16 @@ defaultMain
   -- Top-level delta in issuer
   let authTokenDeltaIn :: AuthTokenDeltaIn -> Eff (Effects eff) Unit
       authTokenDeltaIn deltaIn = do
-        One.writeQueue authTokenDeltaInQueue deltaIn
+        One.putQueue authTokenDeltaInQueue deltaIn
         case deltaIn of
           AuthTokenDeltaInLogout -> killAuthTokenSub
           _ -> pure unit
 
       authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
-      authTokenInitIn = One.writeRef authTokenInitInQueue
+      authTokenInitIn = One.putQueue authTokenInitInQueue
 
 
+  
   -- Handle preliminary auth token
   case preliminaryAuthToken of
     PreliminaryAuthToken Nothing -> pure unit
@@ -424,10 +446,10 @@ defaultMain
       Right prescribedAuthToken ->
         authTokenInitIn (AuthTokenInitInExists {exists: prescribedAuthToken})
       Left e -> -- FIXME ...needs timeout?
-        One.putQueue errorMessageQueue $ SnackbarMessageAuthFailure e
+        One.putQueue globalErrorQueue $ GlobalErrorAuthFailure e
 
   
-  -- Dialog's queue
+  -- Dialog queues
   ( loginCloseQueue :: One.Queue (write :: WRITE) (Effects eff) Unit
     ) <- writeOnly <$> One.newQueue
 
@@ -438,35 +460,37 @@ defaultMain
           let resolve eX = case eX of
                 Left _ -> do
                   IxSignal.set Nothing userDetailsSignal
-                  One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut)
+                  One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut)
                 Right mUserDetails -> do
                   IxSignal.set mUserDetails userDetailsSignal
                   One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
 
           -- Utilize userDetail's obtain method
           runAff_ resolve $ userDetails.obtain
-            { email: parallel $ do
-                mInitOut <- OneIO.callAsync userEmailQueues (AuthInitIn {token: authToken, subj: JSONUnit})
+            { user: parallel $ do
+                -- FIXME use getuser stuff
+                mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
+                  (AccessInitIn {token: authToken, subj: JSONUnit})
                 case mInitOut of
                   Nothing -> do
-                    liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
+                    liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
                     pure Nothing
-                  Just initOut -> case initOut of
-                    AuthInitOut {subj: email} -> pure (Just email)
-                    AuthInitOutNoAuth -> do
-                      liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
-                      pure Nothing
-            , roles: parallel $ do
-                mInitOut <- OneIO.callAsync userRolesQueues (AuthInitIn {token: authToken, subj: JSONUnit})
-                case mInitOut of
-                  Nothing -> do
-                    liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoInitOut))
-                    pure []
-                  Just initOut -> case initOut of
-                    AuthInitOut {subj: roles} -> pure roles
-                    AuthInitOutNoAuth -> do
-                      liftEff (One.putQueue errorMessageQueue (SnackbarMessageUserEmail UserEmailNoAuth))
-                      pure []
+                  Just user -> pure (Just user)
+                    -- AuthInitOut {subj: email} -> pure (Just email)
+                    -- AuthInitOutNoAuth -> do
+                    --   liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoAuth))
+                    --   pure Nothing
+            -- , roles: parallel $ do
+            --     mInitOut <- OneIO.callAsync userRolesQueues (AuthInitIn {token: authToken, subj: JSONUnit})
+            --     case mInitOut of
+            --       Nothing -> do
+            --         liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
+            --         pure []
+            --       Just initOut -> case initOut of
+            --         AuthInitOut {subj: roles} -> pure roles
+            --         AuthInitOutNoAuth -> do
+            --           liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoAuth))
+            --           pure []
             }
   IxSignal.subscribe userDetailsOnAuth authTokenSignal
   -- FIXME analyze auxilliary authTokenSignal listeners
@@ -488,23 +512,33 @@ defaultMain
       {spec: reactSpec, dispatcher} =
         app
           params
-          { development: env.development
-          , errorMessageQueue
-          , loginCloseQueue
-          , initFormDataRef
+          { env
+          , globalErrorQueue
+          , dialogQueues:
+            { login:
+              { closeQueue: loginCloseQueue
+              }
+            }
           , dependenciesQueues
+          , authTokenInitIn
+          , authTokenDeltaIn
           , templateArgs:
             { content
             , topbar
             , leftDrawer
-            , palette
             , userDetails:
               { buttons: userDetails.buttons
               , content: userDetails.content
               }
+            , palette
+            , extendedNetwork
+            , register:
+              { unsavedFormDataQueue: registerUnsavedFormData
+              }
+            , security:
+              { unsavedFormDataQueue: securityUnsavedFormData
+              }
             }
-          , extendedNetwork
-          , env
           }
       component = R.createClass reactSpec
   traverse_ (render (R.createFactory component props) <<< htmlElementToElement) =<< body d

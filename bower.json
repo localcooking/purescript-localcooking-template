@@ -7,29 +7,19 @@
     "output"
   ],
   "dependencies": {
-    "purescript-sparrow": "git@git.localcooking.com:tooling/purescript-sparrow.git#c29eb4ccecaebe3885749cef053d1e2f19437d53",
-    "purescript-localcooking-dependencies": "git@git.localcooking.com:localcooking/purescript-localcooking-dependencies.git#309187e1588221a1ccdc62ff1d8666c74052c902",
-    "purescript-material-ui": "git://github.com/athanclark/purescript-material-ui.git#ec9b763f41f67846aeafe6352bfac26f5a9a4de0",
+    "purescript-localcooking-spec": "git@git.localcooking.com:localcooking/purescript-localcooking-spec.git#ba4164d41ff33563fc45ad00fb79d21637688aaf",
     "purescript-prelude": "^3.2.0",
     "purescript-console": "^3.0.0",
-    "purescript-react": "^5.1.0",
-    "purescript-zeta": "^1.0.0",
-    "purescript-webstorage": "^4.0.0",
-    "purescript-parseint": "^0.0.0",
-    "purescript-thermite": "git://github.com/jvliwanag/purescript-thermite.git#94299d6832d92f14bef029f35d07bd5e8b062e05",
-    "purescript-crypt-nacl": "git://github.com/athanclark/purescript-crypt-nacl.git#b57328882f27a9a46dcd437d89ec09ccde118d19",
-    "purescript-base64": "purescript-base64-2#^1.0.1",
-    "purescript-react-queue": "^0.0.5",
-    "purescript-proxy": "^2.1.0"
+    "purescript-proxy": "^2.1.0",
+    "purescript-parseint": "^0.0.0"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0"
   },
   "resolutions": {
-    "purescript-arraybuffer-types": "^2.0.0",
-    "purescript-sparrow": "c29eb4ccecaebe3885749cef053d1e2f19437d53",
-    "purescript-uuid": "2e563284ee5c41d75bf9010de3c4cded9f0223db",
     "purescript-uri": "dd81f396694361a41ea638b217265361a27b2f28",
-    "purescript-pathy": "9d72b13921c511ebf5b66a87beeed488c5481ec5"
+    "purescript-pathy": "9d72b13921c511ebf5b66a87beeed488c5481ec5",
+    "purescript-uuid": "2e563284ee5c41d75bf9010de3c4cded9f0223db",
+    "purescript-arraybuffer-types": "2.x"
   }
 }
