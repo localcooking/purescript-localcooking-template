@@ -403,8 +403,8 @@ defaultMain
     dependencies dependenciesQueues deps
 
   -- Auth Token singleton dependency mounting
-  authTokenDeltaInQueue <- One.newQueue
-  authTokenInitInQueue <- One.newQueue
+  authTokenDeltaInQueue <- writeOnly <$> One.newQueue
+  authTokenInitInQueue <- writeOnly <$> One.newQueue
   authTokenKillificator <- One.newQueue
 
   let authTokenOnDeltaOut deltaOut = case deltaOut of
@@ -414,7 +414,7 @@ defaultMain
           IxSignal.set Nothing authTokenSignal
           One.putQueue globalErrorQueue (GlobalErrorAuthFailure AuthTokenLoginFailure)
           One.putQueue authTokenKillificator unit
-        Just {initOut,deltaIn: _,unsubscribe} -> case initOut of
+        Just initOut -> case initOut of
           AuthTokenInitOutSuccess authToken -> do
             IxSignal.set (Just authToken) authTokenSignal
           AuthTokenInitOutFailure e -> do
@@ -444,7 +444,7 @@ defaultMain
     PreliminaryAuthToken Nothing -> pure unit
     PreliminaryAuthToken (Just eErr) -> case eErr of
       Right prescribedAuthToken ->
-        authTokenInitIn (AuthTokenInitInExists {exists: prescribedAuthToken})
+        authTokenInitIn (AuthTokenInitInExists prescribedAuthToken)
       Left e -> -- FIXME ...needs timeout?
         One.putQueue globalErrorQueue $ GlobalErrorAuthFailure e
 
