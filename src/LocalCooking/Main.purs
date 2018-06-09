@@ -207,11 +207,15 @@ defaultMain
     ) <- IxSignal.make Nothing
 
   -- Fetch the preliminary auth token from `env`, or LocalStorage
-  ( preliminaryAuthToken :: PreliminaryAuthToken
-    ) <- map PreliminaryAuthToken $ case serverToClient of
+  ( preliminaryAuthToken :: Maybe PreliminaryAuthToken
+    ) <- case serverToClient of
       ServerToClient {authToken} -> case authToken of
-        PreliminaryAuthToken Nothing -> map Right <$> getStoredAuthToken
-        PreliminaryAuthToken (Just eErrX) -> pure (Just eErrX)
+        Nothing -> do
+          mTkn <- getStoredAuthToken
+          case mTkn of
+            Nothing -> pure Nothing
+            Just tkn -> pure $ Just $ PreliminaryAuthToken $ Right tkn
+        tkn -> pure tkn
 
 
   -- Global current page value - for `back` compatibility while being driven by `siteLinksSignal` -- should be read-only
@@ -226,7 +230,7 @@ defaultMain
       case getUserDetailsLink siteLink of
         Just _ -> do
           case preliminaryAuthToken of
-            PreliminaryAuthToken Nothing -> do
+            Nothing -> do
               -- in /userDetails while not logged in
               void $ setTimeout 1000 $ -- FIXME timeouts suck ass
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
@@ -235,7 +239,7 @@ defaultMain
             _ -> pure siteLink
         _ | siteLink == registerLink -> do
           case preliminaryAuthToken of
-            PreliminaryAuthToken (Just (Right _)) -> do
+            Just (PreliminaryAuthToken (Right _)) -> do
               -- in /register while logged in
               void $ setTimeout 1000 $
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
@@ -441,8 +445,8 @@ defaultMain
   
   -- Handle preliminary auth token
   case preliminaryAuthToken of
-    PreliminaryAuthToken Nothing -> pure unit
-    PreliminaryAuthToken (Just eErr) -> case eErr of
+    Nothing -> pure unit
+    (Just (PreliminaryAuthToken eErr)) -> case eErr of
       Right prescribedAuthToken ->
         authTokenInitIn (AuthTokenInitInExists prescribedAuthToken)
       Left e -> -- FIXME ...needs timeout?

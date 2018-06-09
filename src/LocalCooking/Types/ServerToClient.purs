@@ -23,7 +23,7 @@ newtype ServerToClient = ServerToClient
   , facebookClientId       :: FacebookClientId
   , googleReCaptchaSiteKey :: ReCaptchaSiteKey
   , emailToken             :: Maybe EmailToken
-  , authToken              :: PreliminaryAuthToken
+  , authToken              :: Maybe PreliminaryAuthToken
   , formData               :: Maybe FacebookLoginUnsavedFormData
   , salt                   :: HashedPassword
   }
