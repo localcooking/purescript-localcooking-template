@@ -1,8 +1,8 @@
 module LocalCooking.Types.ServerToClient.Type where
 
 import LocalCooking.Common.User.Password (HashedPassword)
-import LocalCooking.Common.AccessToken.Email (EmailToken)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken)
+import LocalCooking.Semantics.Common (ConfirmEmailError)
 import Facebook.State (FacebookLoginUnsavedFormData)
 import Facebook.Types (FacebookClientId)
 import Google.ReCaptcha (ReCaptchaSiteKey)
@@ -22,7 +22,7 @@ newtype ServerToClient = ServerToClient
   { development            :: Boolean
   , facebookClientId       :: FacebookClientId
   , googleReCaptchaSiteKey :: ReCaptchaSiteKey
-  , emailToken             :: Maybe EmailToken
+  , confirmEmail           :: Maybe ConfirmEmailError
   , authToken              :: Maybe PreliminaryAuthToken
   , formData               :: Maybe FacebookLoginUnsavedFormData
   , salt                   :: HashedPassword
@@ -41,7 +41,7 @@ instance arbitraryServerToClient :: Arbitrary ServerToClient where
     development <- arbitrary
     facebookClientId <- arbitrary
     googleReCaptchaSiteKey <- arbitrary
-    emailToken <- arbitrary
+    confirmEmail <- arbitrary
     authToken <- arbitrary
     formData <- arbitrary
     salt <- arbitrary
@@ -49,18 +49,18 @@ instance arbitraryServerToClient :: Arbitrary ServerToClient where
       { development
       , facebookClientId
       , googleReCaptchaSiteKey
-      , emailToken
+      , confirmEmail
       , authToken
       , formData
       , salt
       }
 
 instance encodeJsonServerToClient :: EncodeJson ServerToClient where
-  encodeJson (ServerToClient {development,facebookClientId,googleReCaptchaSiteKey,emailToken,authToken,formData,salt})
+  encodeJson (ServerToClient {development,facebookClientId,googleReCaptchaSiteKey,confirmEmail,authToken,formData,salt})
     =  "development" := development
     ~> "facebookClientId" := facebookClientId
     ~> "googleReCaptchaSiteKey" := googleReCaptchaSiteKey
-    ~> "emailToken" := emailToken
+    ~> "confirmEmail" := confirmEmail
     ~> "authToken" := authToken
     ~> "formData" := formData
     ~> "salt" := salt
@@ -72,7 +72,7 @@ instance decodeJsonServerToClient :: DecodeJson ServerToClient where
     development <- o .? "development"
     facebookClientId <- o .? "facebookClientId"
     googleReCaptchaSiteKey <- o .? "googleReCaptchaSiteKey"
-    emailToken <- o .? "emailToken"
+    confirmEmail <- o .? "confirmEmail"
     authToken <- o .? "authToken"
     formData <- o .? "formData"
     salt <- o .? "salt"
@@ -80,7 +80,7 @@ instance decodeJsonServerToClient :: DecodeJson ServerToClient where
       { development
       , facebookClientId
       , googleReCaptchaSiteKey
-      , emailToken
+      , confirmEmail
       , authToken
       , formData
       , salt

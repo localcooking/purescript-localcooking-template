@@ -218,6 +218,14 @@ defaultMain
         tkn -> pure tkn
 
 
+  -- Spit out confirm email message if it exists
+  case serverToClient of
+    ServerToClient {confirmEmail} -> case confirmEmail of
+      Nothing -> pure unit
+      Just confEmail -> void $ setTimeout 1000 $
+        One.putQueue globalErrorQueue $ GlobalErrorConfirmEmail confEmail
+
+
   -- Global current page value - for `back` compatibility while being driven by `siteLinksSignal` -- should be read-only
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks
     ) <- do
