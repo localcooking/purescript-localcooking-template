@@ -10,10 +10,12 @@ import Google.ReCaptcha (ReCaptchaSiteKey)
 
 import Prelude
 import Data.Maybe (Maybe)
-import Data.Either (Either (Right))
+import Data.Either (Either (..))
 import Data.Generic (class Generic, gShow)
 import Data.Argonaut (Json, class DecodeJson, decodeJson, (.?))
-import Partial.Unsafe (unsafePartial)
+import Data.Typelevel.Undefined (undefined)
+import Control.Monad.Eff.Unsafe (unsafePerformEff)
+import Control.Monad.Eff.Console (error)
 
 
 newtype ServerToClient = ServerToClient
@@ -56,8 +58,9 @@ instance decodeJsonServerToClient :: DecodeJson ServerToClient where
 foreign import serverToClientImpl :: Json
 
 serverToClient :: ServerToClient
-serverToClient = unsafePartial $ case decodeJson serverToClientImpl of
-  Right x -> x
+serverToClient = unsafePerformEff $ case decodeJson serverToClientImpl of
+  Right x -> pure x
+  Left e -> undefined <$ error e
 
 
 env :: Env
