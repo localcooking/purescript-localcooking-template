@@ -424,7 +424,7 @@ defaultMain
       authTokenOnInitOut mInitOut = case mInitOut of
         Nothing -> do
           IxSignal.set Nothing authTokenSignal
-          One.putQueue globalErrorQueue (GlobalErrorAuthFailure AuthTokenLoginFailure)
+          One.putQueue globalErrorQueue (GlobalErrorAuthFailure AuthLoginFailure)
           One.putQueue authTokenKillificator unit
         Just initOut -> case initOut of
           AuthTokenInitOutSuccess authToken -> do
