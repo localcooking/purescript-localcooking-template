@@ -42,7 +42,7 @@ import Data.Generic (class Generic)
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, Ref, newRef, readRef, writeRef)
-import Control.Monad.Eff.Console (CONSOLE)
+import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Timer (TIMER, setTimeout)
 import Control.Monad.Eff.Now (NOW)
@@ -212,17 +212,17 @@ defaultMain
       ServerToClient {authToken} -> case authToken of
         Nothing -> do
           mTkn <- getStoredAuthToken
-          case mTkn of
-            Nothing -> pure Nothing
-            Just tkn -> pure $ Just $ PreliminaryAuthToken $ Right tkn
+          pure (PreliminaryAuthToken <<< Right <$> mTkn)
         tkn -> pure tkn
+
+  log $ "Preliminary auth token: " <> show preliminaryAuthToken
 
 
   -- Spit out confirm email message if it exists
   case serverToClient of
     ServerToClient {confirmEmail} -> case confirmEmail of
       Nothing -> pure unit
-      Just confEmail -> void $ setTimeout 1000 $
+      Just confEmail -> void $ setTimeout 1000 $ -- FIXME timeout necessary?
         One.putQueue globalErrorQueue $ GlobalErrorConfirmEmail confEmail
 
 
@@ -237,6 +237,7 @@ defaultMain
             setDocumentTitle d $ defaultSiteLinksToDocumentTitle y
       case getUserDetailsLink siteLink of
         Just _ -> do
+          -- observe preliminary auth token value immediately on boot
           case preliminaryAuthToken of
             Nothing -> do
               -- in /userDetails while not logged in
@@ -246,20 +247,22 @@ defaultMain
               pure rootLink
             _ -> pure siteLink
         _ | siteLink == registerLink -> do
+          -- observe preliminary auth token value immediately on boot
           case preliminaryAuthToken of
             Just (PreliminaryAuthToken (Right _)) -> do
               -- in /register while logged in
-              void $ setTimeout 1000 $
+              void $ setTimeout 1000 $ -- FIXME timeout
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
               reAssign (rootLink :: siteLinks)
               pure rootLink
             _ -> pure siteLink
           | otherwise -> do
+          -- observe user details value immediately, for use with extra redirects
           mUserDetails <- IxSignal.get userDetailsSignal
           case extraRedirect siteLink mUserDetails of
             Nothing -> pure siteLink
             Just y -> do
-              void $ setTimeout 1000 $
+              void $ setTimeout 1000 $ -- FIXME timeout
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
               reAssign y
               pure y
@@ -274,6 +277,7 @@ defaultMain
       -- Top level redirect for browser back-button - no history change:
       case getUserDetailsLink siteLink of
         Just _ -> do
+          -- observe auth token value at time of onPopState
           mAuth <- IxSignal.get authTokenSignal
           case mAuth of
             Just _ -> continue siteLink
@@ -284,21 +288,23 @@ defaultMain
               replaceState' (rootLink :: siteLinks) h
               continue rootLink
         _ | siteLink == registerLink -> do
+            -- observe auth token value at time of onPopState
             mAuth <- IxSignal.get authTokenSignal
             case mAuth of
               Nothing -> continue siteLink
               Just _ -> do
                 -- in /register while logged in
-                void $ setTimeout 1000 $
+                void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
                 replaceState' (rootLink :: siteLinks) h
                 continue rootLink
           | otherwise -> do
+            -- observe user details value at time of onPopState, for use with extra redirects
             mUserDetails <- IxSignal.get userDetailsSignal
             case extraRedirect siteLink mUserDetails of
               Nothing -> continue siteLink
               Just y -> do
-                void $ setTimeout 1000 $
+                void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                 continue y
 
@@ -319,75 +325,72 @@ defaultMain
       -- redirect rules
       case getUserDetailsLink siteLink of
         Just _ -> do
+          -- observe auth token value at time of page change request
           mAuth <- IxSignal.get authTokenSignal
           case mAuth of
             Just _ -> continue siteLink
             Nothing -> do
               -- in /userDetails while not logged in
-              void $ setTimeout 1000 $
+              void $ setTimeout 1000 $ -- FIXME timeout
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
               continue rootLink
         _ | siteLink == registerLink -> do
+            -- observe auth token value at time of page change request
             mAuth <- IxSignal.get authTokenSignal
             case mAuth of
               Nothing -> continue siteLink
               Just _ -> do
                 -- in /register while logged in
-                void $ setTimeout 1000 $
+                void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
                 continue rootLink
           | otherwise -> do
+            -- observe user details value at time of page change request
             mUserDetails <- IxSignal.get userDetailsSignal
             case extraRedirect siteLink mUserDetails of
               Nothing -> continue siteLink
               Just y -> do
-                void $ setTimeout 1000 $
+                void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                 continue y
     pure (writeOnly q)
 
 
-  -- FIXME some bullshit for dealing with authTokenSignal := Nothing on load
-  onceRef <- newRef false
   -- rediect rules for async logout events
   let redirectOnAuth mAuth = do
+        -- observe current page value at time of auth token value change
         siteLink <- IxSignal.get currentPageSignal
         let continue = do
               One.putQueue siteLinksSignal rootLink
         case getUserDetailsLink siteLink of
           Just _ -> case mAuth of
             Nothing -> do
-              -- hack for listening to the signal the first time on bind - first is always Nothing
-              once <- do
-                x <- readRef onceRef
-                writeRef onceRef true
-                pure x
-              when once $ do
-                void $ setTimeout 1000 $
-                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-                continue
+              void $ setTimeout 1000 $ -- FIXME timeout
+                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
+              continue
             _ -> pure unit
           _ | siteLink == registerLink -> case mAuth of
               Just _ -> do
-                void $ setTimeout 1000 $
+                void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
                 continue
               _ -> pure unit
             | otherwise -> do
+              -- observe user details value at time of auth token value change
               mUserDetails <- IxSignal.get userDetailsSignal
               case extraRedirect siteLink mUserDetails of
                 Nothing -> pure unit
                 Just y -> do
-                  void $ setTimeout 1000 $
+                  void $ setTimeout 1000 $ -- FIXME timeout
                     One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                   One.putQueue siteLinksSignal y
-  IxSignal.subscribe redirectOnAuth authTokenSignal
+  IxSignal.subscribeLight redirectOnAuth authTokenSignal
 
   -- auth token storage and clearing on site-wide driven changes
   let localstorageOnAuth mAuth = case mAuth of
         Nothing -> clearAuthToken
-        Just authToken -> storeAuthToken authToken
-  IxSignal.subscribe localstorageOnAuth authTokenSignal
+        Just authToken -> storeAuthToken authToken -- FIXME overwrites already stored value retreived on boot
+  IxSignal.subscribeLight localstorageOnAuth authTokenSignal
     -- FIXME analyze the issue of having multiple auxilliary listeners on
     -- authTokenSignal changes
 
@@ -417,10 +420,12 @@ defaultMain
   -- Auth Token singleton dependency mounting
   authTokenDeltaInQueue <- writeOnly <$> One.newQueue
   authTokenInitInQueue <- writeOnly <$> One.newQueue
-  authTokenKillificator <- One.newQueue
+  authTokenKillificator <- One.newQueue -- hack for killing the subscription internally, yet external for this scope
 
   let authTokenOnDeltaOut deltaOut = case deltaOut of
-        AuthTokenDeltaOutRevoked -> IxSignal.set Nothing authTokenSignal
+        AuthTokenDeltaOutRevoked ->
+          IxSignal.set Nothing authTokenSignal
+          -- TODO anything else needed to be cleaned up?
       authTokenOnInitOut mInitOut = case mInitOut of
         Nothing -> do
           IxSignal.set Nothing authTokenSignal
@@ -436,7 +441,7 @@ defaultMain
 
   killAuthTokenSub <- mountSparrowClientQueuesSingleton dependenciesQueues.authTokenQueues.authTokenQueues
     authTokenDeltaInQueue authTokenInitInQueue authTokenOnDeltaOut authTokenOnInitOut
-  One.onQueue authTokenKillificator \_ -> killAuthTokenSub
+  One.onQueue authTokenKillificator \_ -> killAuthTokenSub -- hack applied
 
   -- Top-level delta in issuer
   let authTokenDeltaIn :: AuthTokenDeltaIn -> Eff (Effects eff) Unit
@@ -488,24 +493,8 @@ defaultMain
                     liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
                     pure Nothing
                   Just user -> pure (Just user)
-                    -- AuthInitOut {subj: email} -> pure (Just email)
-                    -- AuthInitOutNoAuth -> do
-                    --   liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoAuth))
-                    --   pure Nothing
-            -- , roles: parallel $ do
-            --     mInitOut <- OneIO.callAsync userRolesQueues (AuthInitIn {token: authToken, subj: JSONUnit})
-            --     case mInitOut of
-            --       Nothing -> do
-            --         liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
-            --         pure []
-            --       Just initOut -> case initOut of
-            --         AuthInitOut {subj: roles} -> pure roles
-            --         AuthInitOutNoAuth -> do
-            --           liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoAuth))
-            --           pure []
             }
-  IxSignal.subscribe userDetailsOnAuth authTokenSignal
-  -- FIXME analyze auxilliary authTokenSignal listeners
+  IxSignal.subscribeLight userDetailsOnAuth authTokenSignal
 
 
   -- universal React component params
