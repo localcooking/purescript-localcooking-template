@@ -455,17 +455,23 @@ defaultMain
       authTokenInitIn = One.putQueue authTokenInitInQueue
 
 
-  
+
   -- Handle preliminary auth token
   case preliminaryAuthToken of
     Nothing -> pure unit
     (Just (PreliminaryAuthToken eErr)) -> case eErr of
       Right prescribedAuthToken ->
         authTokenInitIn (AuthTokenInitInExists prescribedAuthToken)
-      Left e -> -- FIXME ...needs timeout?
+      Left e -> do -- FIXME ...needs timeout?
         One.putQueue globalErrorQueue $ GlobalErrorAuthFailure e
+        -- try and recover even during weird init error
+        mTkn <- getStoredAuthToken
+        case mTkn of
+          Nothing -> pure unit
+          Just storedAuthToken ->
+            authTokenInitIn (AuthTokenInitInExists storedAuthToken)
 
-  
+
   -- Dialog queues
   ( loginCloseQueue :: One.Queue (write :: WRITE) (Effects eff) Unit
     ) <- writeOnly <$> One.newQueue
