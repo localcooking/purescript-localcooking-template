@@ -10,11 +10,12 @@ import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 -- import LocalCooking.Spec.Snackbar (GlobalError (..), RedirectError (..), UserEmailError (..))
 import LocalCooking.Global.Error
-  (GlobalError (..), RedirectError (..), UserEmailError (..), AuthTokenFailure (..))
+  (GlobalError (..), RedirectError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..))
 import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
 import LocalCooking.Global.User.Class (class UserDetails)
 import LocalCooking.Dependencies (dependencies, newQueues, DependenciesQueues)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
+import LocalCooking.Dependencies.Common (UserDeltaOut (..), UserInitOut (..), UserDeltaIn (..), UserInitIn (..))
 import LocalCooking.Dependencies.AccessToken.Generic (AccessInitIn (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 -- import LocalCooking.Common.User.Role (UserRole)
@@ -113,7 +114,7 @@ type LocalCookingArgs siteLinks userDetails siteQueues eff =
     { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -- ^ Side navigation
     , content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
     , obtain  :: -- ^ Given a method to obtain a few fields, obtain the entire struct
-      { user  :: Aff eff (Maybe User)
+      { user  :: ParAff eff (Maybe User)
       } -> Aff eff (Maybe userDetails)
     }
   , newSiteQueues :: Eff eff siteQueues -- ^ New subsidiary-site specific sparrow dependency queues
@@ -411,7 +412,12 @@ defaultMain
     pure out
 
 
-  -- Sparrow dependencies
+  -- Dialog queues
+  ( loginCloseQueue :: One.Queue (write :: WRITE) (Effects eff) Unit
+    ) <- writeOnly <$> One.newQueue
+
+
+  -- Sparrow dependencies ------------------------------------------------------
   dependenciesQueues <- newQueues newSiteQueues
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
     dependencies dependenciesQueues deps
@@ -453,6 +459,64 @@ defaultMain
       authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
       authTokenInitIn = One.putQueue authTokenInitInQueue
 
+  -- Auth Token singleton dependency mounting
+  userDeltaInQueue <- writeOnly <$> One.newQueue
+  userInitInQueue <- writeOnly <$> One.newQueue
+  -- userKillificator <- One.newQueue -- hack for killing the subscription internally, yet external for this scope
+
+  let userOnDeltaOut deltaOut = case deltaOut of
+        UserDeltaOutSetUserFailure ->
+          One.putQueue globalErrorQueue (GlobalErrorSecurity SecuritySaveFailed)
+        UserDeltaOutSetUserSuccess ->
+          One.putQueue globalErrorQueue (GlobalErrorSecurity SecuritySaveSuccess)
+        _ -> pure unit
+      userOnInitOut mInitOut = do
+        let resolve eX = do
+              log $ "uh... did user deets resolve? " <> show eX
+              case eX of
+                Left _ -> do
+                  IxSignal.set Nothing userDetailsSignal
+                  One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut)
+                Right mUserDetails -> do
+                  IxSignal.set mUserDetails userDetailsSignal
+                  One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
+        -- log "so uh... yeah, what the fuck"
+        -- Utilize userDetail's obtain method
+        runAff_ resolve $
+          -- liftEff $ log "like.. uh... calling obtain lmoa"
+          case mInitOut of
+            Nothing ->
+              userDetails.obtain
+                { user: parallel $ pure Nothing
+                }
+              -- IxSignal.set Nothing userSignal
+              -- One.putQueue globalErrorQueue (GlobalErrorAuthFailure AuthLoginFailure)
+              -- One.putQueue userKillificator unit
+            Just (UserInitOut user) -> do -- FIXME OBTAIN
+              userDetails.obtain
+                { user: parallel $ pure $ Just user -- do
+                    -- liftEff $ log "goddamnit what is going on"
+                    -- mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
+                    --   (AccessInitIn {token: authToken, subj: JSONUnit})
+                    -- liftEff $ log $ "get user invoked via user deets... " <> show mInitOut
+                    -- case mInitOut of
+                    --   Nothing -> do
+                    --     liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
+                    --     pure Nothing
+                    --   Just user -> pure (Just user)
+                }
+
+  _ <- mountSparrowClientQueuesSingleton dependenciesQueues.commonQueues.userQueues
+    userDeltaInQueue userInitInQueue userOnDeltaOut userOnInitOut
+  -- One.onQueue userKillificator \_ -> killUserSub -- hack applied
+
+  -- Top-level delta in issuer
+  let userDeltaIn :: UserDeltaIn -> Eff (Effects eff) Unit
+      userDeltaIn = One.putQueue userDeltaInQueue
+
+      userInitIn :: UserInitIn -> Eff (Effects eff) Unit
+      userInitIn = One.putQueue userInitInQueue
+
 
 
   -- Handle preliminary auth token
@@ -471,9 +535,6 @@ defaultMain
             authTokenInitIn (AuthTokenInitInExists storedAuthToken)
 
 
-  -- Dialog queues
-  ( loginCloseQueue :: One.Queue (write :: WRITE) (Effects eff) Unit
-    ) <- writeOnly <$> One.newQueue
 
   -- user details fetcher and clearer
   let userDetailsOnAuth mAuth = do
@@ -482,33 +543,7 @@ defaultMain
           Nothing -> do
             log "lidderally why"
             IxSignal.set Nothing userDetailsSignal
-          Just authToken -> do
-            let resolve eX = do
-                  log $ "uh... did user deets resolve? " <> show eX
-                  case eX of
-                    Left _ -> do
-                      IxSignal.set Nothing userDetailsSignal
-                      One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut)
-                    Right mUserDetails -> do
-                      IxSignal.set mUserDetails userDetailsSignal
-                      One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
-
-            log "so uh... yeah, what the fuck"
-            -- Utilize userDetail's obtain method
-            runAff_ resolve $ do
-              liftEff $ log "like.. uh... calling obtain lmoa"
-              userDetails.obtain
-                { user: do
-                    liftEff $ log "goddamnit what is going on"
-                    mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
-                      (AccessInitIn {token: authToken, subj: JSONUnit})
-                    liftEff $ log $ "get user invoked via user deets... " <> show mInitOut
-                    case mInitOut of
-                      Nothing -> do
-                        liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
-                        pure Nothing
-                      Just user -> pure (Just user)
-                }
+          Just authToken -> userInitIn $ UserInitIn $ AccessInitIn {token: authToken, subj: JSONUnit}
   IxSignal.subscribeLight userDetailsOnAuth authTokenSignal
 
 
@@ -538,6 +573,8 @@ defaultMain
           , dependenciesQueues
           , authTokenInitIn
           , authTokenDeltaIn
+          , userInitIn
+          , userDeltaIn
           , templateArgs:
             { content
             , topbar
