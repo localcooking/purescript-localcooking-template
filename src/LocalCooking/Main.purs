@@ -113,8 +113,7 @@ type LocalCookingArgs siteLinks userDetails siteQueues eff =
     { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -- ^ Side navigation
     , content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
     , obtain  :: -- ^ Given a method to obtain a few fields, obtain the entire struct
-      { user  :: ParAff eff (Maybe User)
-      -- , roles :: ParAff eff (Array UserRole)
+      { user  :: Aff eff (Maybe User)
       } -> Aff eff (Maybe userDetails)
     }
   , newSiteQueues :: Eff eff siteQueues -- ^ New subsidiary-site specific sparrow dependency queues
@@ -499,7 +498,7 @@ defaultMain
             runAff_ resolve $ do
               liftEff $ log "like.. uh... calling obtain lmoa"
               userDetails.obtain
-                { user: parallel $ do
+                { user: do
                     liftEff $ log "goddamnit what is going on"
                     mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
                       (AccessInitIn {token: authToken, subj: JSONUnit})
