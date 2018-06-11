@@ -480,7 +480,9 @@ defaultMain
   let userDetailsOnAuth mAuth = do
         log $ "fetching user deets: " <> show mAuth
         case mAuth of
-          Nothing -> IxSignal.set Nothing userDetailsSignal
+          Nothing -> do
+            log "lidderally why"
+            IxSignal.set Nothing userDetailsSignal
           Just authToken -> do
             let resolve eX = do
                   log $ "uh... did user deets resolve? " <> show eX
@@ -492,18 +494,21 @@ defaultMain
                       IxSignal.set mUserDetails userDetailsSignal
                       One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
 
+            log "so uh... yeah, what the fuck"
             -- Utilize userDetail's obtain method
-            runAff_ resolve $ userDetails.obtain
-              { user: parallel $ do
-                  mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
-                    (AccessInitIn {token: authToken, subj: JSONUnit})
-                  liftEff $ log $ "get user invoked via user deets... " <> show mInitOut
-                  case mInitOut of
-                    Nothing -> do
-                      liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
-                      pure Nothing
-                    Just user -> pure (Just user)
-              }
+            runAff_ resolve $ do
+              liftEff $ log "like.. uh... calling obtain lmoa"
+              userDetails.obtain
+                { user: parallel $ do
+                    mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
+                      (AccessInitIn {token: authToken, subj: JSONUnit})
+                    liftEff $ log $ "get user invoked via user deets... " <> show mInitOut
+                    case mInitOut of
+                      Nothing -> do
+                        liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
+                        pure Nothing
+                      Just user -> pure (Just user)
+                }
   IxSignal.subscribeLight userDetailsOnAuth authTokenSignal
 
 
