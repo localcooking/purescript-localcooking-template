@@ -66,6 +66,7 @@ import DOM.HTML.Types (HISTORY, htmlElementToElement)
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal as IxSignal
+import IxSignal.Extra as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
 import Signal.DOM (windowDimensions)
@@ -391,8 +392,6 @@ defaultMain
         Nothing -> clearAuthToken
         Just authToken -> storeAuthToken authToken -- FIXME overwrites already stored value retreived on boot
   IxSignal.subscribeLight localstorageOnAuth authTokenSignal
-    -- FIXME analyze the issue of having multiple auxilliary listeners on
-    -- authTokenSignal changes
 
 
   -- Global window size value
@@ -458,7 +457,7 @@ defaultMain
 
   -- Handle preliminary auth token
   case preliminaryAuthToken of
-    Nothing -> pure unit
+    Nothing -> log "no preliminary token"
     (Just (PreliminaryAuthToken eErr)) -> case eErr of
       Right prescribedAuthToken ->
         authTokenInitIn (AuthTokenInitInExists prescribedAuthToken)
@@ -467,7 +466,7 @@ defaultMain
         -- try and recover even during weird init error
         mTkn <- getStoredAuthToken
         case mTkn of
-          Nothing -> pure unit
+          Nothing -> log "no stored token either"
           Just storedAuthToken ->
             authTokenInitIn (AuthTokenInitInExists storedAuthToken)
 
@@ -477,29 +476,30 @@ defaultMain
     ) <- writeOnly <$> One.newQueue
 
   -- user details fetcher and clearer
-  let userDetailsOnAuth mAuth = case mAuth of
-        Nothing -> IxSignal.set Nothing userDetailsSignal
-        Just authToken -> do
-          let resolve eX = case eX of
-                Left _ -> do
-                  IxSignal.set Nothing userDetailsSignal
-                  One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut)
-                Right mUserDetails -> do
-                  IxSignal.set mUserDetails userDetailsSignal
-                  One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
+  let userDetailsOnAuth mAuth = do
+        log $ "fetching user deets: " <> show mAuth
+        case mAuth of
+          Nothing -> IxSignal.set Nothing userDetailsSignal
+          Just authToken -> do
+            let resolve eX = case eX of
+                  Left _ -> do
+                    IxSignal.set Nothing userDetailsSignal
+                    One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut)
+                  Right mUserDetails -> do
+                    IxSignal.set mUserDetails userDetailsSignal
+                    One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
 
-          -- Utilize userDetail's obtain method
-          runAff_ resolve $ userDetails.obtain
-            { user: parallel $ do
-                -- FIXME use getuser stuff
-                mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
-                  (AccessInitIn {token: authToken, subj: JSONUnit})
-                case mInitOut of
-                  Nothing -> do
-                    liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
-                    pure Nothing
-                  Just user -> pure (Just user)
-            }
+            -- Utilize userDetail's obtain method
+            runAff_ resolve $ userDetails.obtain
+              { user: parallel $ do
+                  mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
+                    (AccessInitIn {token: authToken, subj: JSONUnit})
+                  case mInitOut of
+                    Nothing -> do
+                      liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
+                      pure Nothing
+                    Just user -> pure (Just user)
+              }
   IxSignal.subscribeLight userDetailsOnAuth authTokenSignal
 
 
