@@ -141,6 +141,7 @@ defaultMain :: forall eff siteLinks userDetailsLinks userDetails siteQueues
             => UserDetails userDetails
             => Generic siteLinks
             => Generic userDetails
+            => Show userDetails
             => LocalCookingArgs siteLinks userDetails siteQueues (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain
@@ -481,19 +482,22 @@ defaultMain
         case mAuth of
           Nothing -> IxSignal.set Nothing userDetailsSignal
           Just authToken -> do
-            let resolve eX = case eX of
-                  Left _ -> do
-                    IxSignal.set Nothing userDetailsSignal
-                    One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut)
-                  Right mUserDetails -> do
-                    IxSignal.set mUserDetails userDetailsSignal
-                    One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
+            let resolve eX = do
+                  log $ "uh... did user deets resolve? " <> show eX
+                  case eX of
+                    Left _ -> do
+                      IxSignal.set Nothing userDetailsSignal
+                      One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut)
+                    Right mUserDetails -> do
+                      IxSignal.set mUserDetails userDetailsSignal
+                      One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
 
             -- Utilize userDetail's obtain method
             runAff_ resolve $ userDetails.obtain
               { user: parallel $ do
                   mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
                     (AccessInitIn {token: authToken, subj: JSONUnit})
+                  liftEff $ log $ "get user invoked via user deets... " <> show mInitOut
                   case mInitOut of
                     Nothing -> do
                       liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
