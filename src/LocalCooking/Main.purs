@@ -500,6 +500,7 @@ defaultMain
               liftEff $ log "like.. uh... calling obtain lmoa"
               userDetails.obtain
                 { user: parallel $ do
+                    liftEff $ log "goddamnit what is going on"
                     mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
                       (AccessInitIn {token: authToken, subj: JSONUnit})
                     liftEff $ log $ "get user invoked via user deets... " <> show mInitOut
