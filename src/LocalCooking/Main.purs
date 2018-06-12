@@ -117,7 +117,7 @@ type LocalCookingArgs siteLinks userDetails siteQueues eff =
       { user  :: ParAff eff (Maybe User)
       } -> Aff eff (Maybe userDetails)
     }
-  , newSiteQueues :: Eff eff siteQueues -- ^ New subsidiary-site specific sparrow dependency queues
+  , siteQueues    :: siteQueues -- ^ Subsidiary-site specific sparrow dependency queues, generated in outer scope
   , deps          :: siteQueues -> SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
   , initSiteLinks :: siteLinks -- ^ The page opened
   , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks -- ^ Additional redirection rules per-site
@@ -145,7 +145,7 @@ defaultMain :: forall eff siteLinks userDetailsLinks userDetails siteQueues
             => LocalCookingArgs siteLinks userDetails siteQueues (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain
-  { newSiteQueues
+  { siteQueues
   , deps
   , topbar
   , leftDrawer
@@ -418,7 +418,7 @@ defaultMain
 
 
   -- Sparrow dependencies ------------------------------------------------------
-  dependenciesQueues <- newQueues newSiteQueues
+  dependenciesQueues <- newQueues siteQueues
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
     dependencies dependenciesQueues deps
 
