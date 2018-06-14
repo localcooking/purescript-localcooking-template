@@ -472,7 +472,6 @@ defaultMain
         _ -> pure unit
       userOnInitOut mInitOut = do
         let resolve eX = do
-              log $ "uh... did user deets resolve? " <> show eX
               case eX of
                 Left _ -> do
                   IxSignal.set Nothing userDetailsSignal
@@ -480,30 +479,15 @@ defaultMain
                 Right mUserDetails -> do
                   IxSignal.set mUserDetails userDetailsSignal
                   One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
-        -- log "so uh... yeah, what the fuck"
-        -- Utilize userDetail's obtain method
         runAff_ resolve $
-          -- liftEff $ log "like.. uh... calling obtain lmoa"
           case mInitOut of
             Nothing ->
               userDetails.obtain
                 { user: parallel $ pure Nothing
                 }
-              -- IxSignal.set Nothing userSignal
-              -- One.putQueue globalErrorQueue (GlobalErrorAuthFailure AuthLoginFailure)
-              -- One.putQueue userKillificator unit
             Just (UserInitOut user) -> do -- FIXME OBTAIN
               userDetails.obtain
                 { user: parallel $ pure $ Just user -- do
-                    -- liftEff $ log "goddamnit what is going on"
-                    -- mInitOut <- OneIO.callAsync dependenciesQueues.commonQueues.getUserQueues
-                    --   (AccessInitIn {token: authToken, subj: JSONUnit})
-                    -- liftEff $ log $ "get user invoked via user deets... " <> show mInitOut
-                    -- case mInitOut of
-                    --   Nothing -> do
-                    --     liftEff (One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut))
-                    --     pure Nothing
-                    --   Just user -> pure (Just user)
                 }
 
   _ <- mountSparrowClientQueuesSingleton dependenciesQueues.commonQueues.userQueues
