@@ -1,30 +1,27 @@
 module LocalCooking.Main where
 
 import LocalCooking.Spec (app)
--- import LocalCooking.Spec.Dialogs (newDialogQueues)
 import LocalCooking.Spec.Content.Register (RegisterUnsavedFormData (..))
 import LocalCooking.Spec.Content.UserDetails.Security (SecurityUnsavedFormData (..))
 import LocalCooking.Spec.Types.Env (Env)
 import LocalCooking.Types.ServerToClient (ServerToClient (..), serverToClient)
 import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
--- import LocalCooking.Spec.Snackbar (GlobalError (..), RedirectError (..), UserEmailError (..))
 import LocalCooking.Global.Error
   (GlobalError (..), RedirectError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..))
 import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
 import LocalCooking.Global.User.Class (class UserDetails)
-import LocalCooking.Dependencies (dependencies, newQueues, DependenciesQueues)
+import LocalCooking.Dependencies (dependencies, newQueues)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
-import LocalCooking.Dependencies.Common (UserDeltaOut (..), UserInitOut (..), UserDeltaIn (..), UserInitIn (..))
+import LocalCooking.Dependencies.Common (UserDeltaOut (..), UserInitOut (..), UserDeltaIn, UserInitIn (..))
 import LocalCooking.Dependencies.AccessToken.Generic (AccessInitIn (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
--- import LocalCooking.Common.User.Role (UserRole)
 import LocalCooking.Semantics.Common (User)
 import Facebook.State (FacebookLoginUnsavedFormData (..))
 
-import Sparrow.Client (allocateDependencies, unpackClient)
-import Sparrow.Client.Queue (newSparrowClientQueues, newSparrowStaticClientQueues, sparrowClientQueues, sparrowStaticClientQueues, mountSparrowClientQueuesSingleton)
-import Sparrow.Types (Topic (..))
+import Sparrow.Client (allocateDependencies)
+import Sparrow.Client.Queue (mountSparrowClientQueuesSingleton)
+import Sparrow.Client.Types (SparrowClientT)
 
 import Prelude
 import Data.Maybe (Maybe (..))
@@ -39,18 +36,15 @@ import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Data.Generic (class Generic)
--- import Text.Email.Validate (EmailAddress)
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
-import Control.Monad.Eff.Ref (REF, Ref, newRef, readRef, writeRef)
+import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
 import Control.Monad.Eff.Console (CONSOLE, log)
-import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Timer (TIMER, setTimeout)
 import Control.Monad.Eff.Now (NOW)
 import Control.Monad.Eff.Exception (EXCEPTION)
 import Control.Execution.Immediate (SET_IMMEDIATE_SHIM, registerShim)
 
-import Sparrow.Client.Types (SparrowClientT)
 import React (ReactElement)
 import React as R
 import ReactDOM (render)
@@ -66,15 +60,13 @@ import DOM.HTML.Document.Extra (setDocumentTitle)
 import DOM.HTML.Types (HISTORY, htmlElementToElement)
 
 import IxSignal.Internal (IxSignal)
-import IxSignal.Internal as IxSignal
-import IxSignal.Extra as IxSignal
+import IxSignal.Internal (get, make, set, subscribeLight) as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
 import Signal.DOM (windowDimensions)
 import Queue.Types (writeOnly)
 import Queue (READ, WRITE)
 import Queue.One as One
-import Queue.One.Aff as OneIO
 import Browser.WebStorage (WEB_STORAGE)
 import WebSocket (WEBSOCKET)
 import Network.HTTP.Affjax (AJAX)

@@ -9,10 +9,8 @@ import LocalCooking.Types.ServerToClient.Type as Type
 import LocalCooking.Spec.Types.Env (Env)
 
 import Prelude
-import Data.Maybe (Maybe)
 import Data.Either (Either (..))
-import Data.Generic (class Generic, gShow, gEq)
-import Data.Argonaut (Json, class DecodeJson, class EncodeJson, decodeJson, (.?), (:=), (~>), jsonEmptyObject)
+import Data.Argonaut (Json, decodeJson)
 import Data.Typelevel.Undefined (undefined)
 import Control.Monad.Eff.Unsafe (unsafePerformEff)
 import Control.Monad.Eff.Console (error)

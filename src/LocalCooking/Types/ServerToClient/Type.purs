@@ -9,12 +9,8 @@ import Google.ReCaptcha (ReCaptchaSiteKey)
 
 import Prelude
 import Data.Maybe (Maybe)
-import Data.Either (Either (..))
 import Data.Generic (class Generic, gShow, gEq)
-import Data.Argonaut (Json, class DecodeJson, class EncodeJson, decodeJson, (.?), (:=), (~>), jsonEmptyObject)
-import Data.Typelevel.Undefined (undefined)
-import Control.Monad.Eff.Unsafe (unsafePerformEff)
-import Control.Monad.Eff.Console (error)
+import Data.Argonaut (class DecodeJson, class EncodeJson, decodeJson, (.?), (:=), (~>), jsonEmptyObject)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 
