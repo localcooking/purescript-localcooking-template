@@ -7,7 +7,7 @@
     "output"
   ],
   "dependencies": {
-    "purescript-localcooking-spec": "git@git.localcooking.com:localcooking/purescript-localcooking-spec.git#f74dafbf295ba4e719390c703ec0df2e89172679",
+    "purescript-localcooking-spec": "git@git.localcooking.com:localcooking/purescript-localcooking-spec.git#e68e62d8b06451753a98c5d50eb88486ac0268e6",
     "purescript-prelude": "^3.2.0",
     "purescript-console": "^3.0.0",
     "purescript-proxy": "^2.1.0",
