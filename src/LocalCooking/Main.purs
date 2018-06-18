@@ -109,6 +109,9 @@ type LocalCookingArgs siteLinks userDetails siteQueues eff =
       { user  :: ParAff eff (Maybe User)
       } -> Aff eff (Maybe userDetails)
     }
+  , error ::
+    { content :: Array ReactElement
+    }
   , siteQueues    :: siteQueues -- ^ Subsidiary-site specific sparrow dependency queues, generated in outer scope
   , deps          :: siteQueues -> SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
   , initSiteLinks :: siteLinks -- ^ The page opened
@@ -148,6 +151,7 @@ defaultMain
   , palette
   , extendedNetwork
   , extraRedirect
+  , error
   } = do
   -- inject events
   injectTapEvent
@@ -567,6 +571,7 @@ defaultMain
             , security:
               { unsavedFormDataQueue: securityUnsavedFormData
               }
+            , error
             }
           }
       component = R.createClass reactSpec
