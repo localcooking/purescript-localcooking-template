@@ -94,17 +94,17 @@ type Effects eff =
 
 
 type LocalCookingArgs siteLinks userDetails siteQueues eff =
-  { content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -- ^ Primary content process
+  { content :: LocalCookingParams siteLinks userDetails eff -> ReactElement -- ^ Primary content process
   , topbar ::
     { imageSrc :: Location -- ^ Nify colored logo
-    , buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
+    , buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -> ReactElement
     }
   , leftDrawer ::
-    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -- ^ Mobile only
+    { buttons :: LocalCookingParams siteLinks userDetails eff -> ReactElement -> ReactElement -- ^ Mobile only
     }
   , userDetails ::
-    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -- ^ Side navigation
-    , content :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement
+    { buttons :: LocalCookingParams siteLinks userDetails eff -> Array ReactElement -> ReactElement -> ReactElement -- ^ Side navigation
+    , content :: LocalCookingParams siteLinks userDetails eff -> ReactElement
     , obtain  :: -- ^ Given a method to obtain a few fields, obtain the entire struct
       { user  :: ParAff eff (Maybe User)
       } -> Aff eff (Maybe userDetails)
