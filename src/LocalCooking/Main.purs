@@ -110,7 +110,7 @@ type LocalCookingArgs siteLinks userDetails siteQueues eff =
       } -> Aff eff (Maybe userDetails)
     }
   , error ::
-    { content :: Array ReactElement
+    { content :: ReactElement
     }
   , siteQueues    :: siteQueues -- ^ Subsidiary-site specific sparrow dependency queues, generated in outer scope
   , deps          :: siteQueues -> SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
