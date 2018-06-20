@@ -9,7 +9,7 @@ import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Global.Error
   (GlobalError (..), RedirectError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..))
-import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle)
+import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks)
 import LocalCooking.Global.User.Class (class UserDetails)
 import LocalCooking.Dependencies (dependencies, newQueues)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
@@ -39,7 +39,7 @@ import Data.Generic (class Generic)
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
-import Control.Monad.Eff.Console (CONSOLE, log)
+import Control.Monad.Eff.Console (CONSOLE, log, warn)
 import Control.Monad.Eff.Timer (TIMER, setTimeout)
 import Control.Monad.Eff.Now (NOW)
 import Control.Monad.Eff.Exception (EXCEPTION)
@@ -114,7 +114,6 @@ type LocalCookingArgs siteLinks userDetails siteQueues eff =
     }
   , siteQueues    :: siteQueues -- ^ Subsidiary-site specific sparrow dependency queues, generated in outer scope
   , deps          :: siteQueues -> SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
-  , initSiteLinks :: siteLinks -- ^ The page opened
   , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks -- ^ Additional redirection rules per-site
   , palette :: -- ^ Colors
     { primary   :: ColorPalette
@@ -147,7 +146,6 @@ defaultMain
   , content
   , userDetails
   , env
-  , initSiteLinks
   , palette
   , extendedNetwork
   , extraRedirect
@@ -229,8 +227,9 @@ defaultMain
     ) <- do
     initSiteLink <- do
       -- initial redirects
-      let siteLink = initSiteLinks
-          reAssign y = do
+      (siteLink :: siteLinks) <- initSiteLinks
+      let reAssign y = do
+            warn $ "ReAssigning parsed siteLink, within currentPageSignal definition: " <> show siteLink <> " to " <> show y
             replaceState' y h
             setDocumentTitle d $ defaultSiteLinksToDocumentTitle y
       case getUserDetailsLink siteLink of
@@ -238,6 +237,7 @@ defaultMain
           -- observe preliminary auth token value immediately on boot
           case preliminaryAuthToken of
             Nothing -> do
+              warn "No preliminaryAuthToken while in /userDetails/*"
               -- in /userDetails while not logged in
               void $ setTimeout 1000 $ -- FIXME timeouts suck ass
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
@@ -248,6 +248,7 @@ defaultMain
           -- observe preliminary auth token value immediately on boot
           case preliminaryAuthToken of
             Just (PreliminaryAuthToken (Right _)) -> do
+              warn "preliminaryAuthToken while in /register"
               -- in /register while logged in
               void $ setTimeout 1000 $ -- FIXME timeout
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
@@ -260,6 +261,7 @@ defaultMain
           case extraRedirect siteLink mUserDetails of
             Nothing -> pure siteLink
             Just y -> do
+              warn $ "extraRedirect performed: " <> show siteLink <> " to " <> show y
               void $ setTimeout 1000 $ -- FIXME timeout
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
               reAssign y
@@ -270,6 +272,7 @@ defaultMain
     -- handle back & forward
     flip onPopState w \(siteLink :: siteLinks) -> do
       let continue x = do
+            -- warn $ "Continuing from onPopState parsed siteLink: " <> show siteLink <> " to " <> show x
             setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
             IxSignal.set x sig
       -- Top level redirect for browser back-button - no history change:
@@ -280,6 +283,7 @@ defaultMain
           case mAuth of
             Just _ -> continue siteLink
             Nothing -> do
+              warn "No authTokenSignal while in /userDetails/*"
               -- in /userDetails while not logged in
               void $ setTimeout 1000 $ -- FIXME timeouts suck ass
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
@@ -291,6 +295,7 @@ defaultMain
             case mAuth of
               Nothing -> continue siteLink
               Just _ -> do
+                warn "authTokenSignal while in /register"
                 -- in /register while logged in
                 void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
@@ -302,6 +307,7 @@ defaultMain
             case extraRedirect siteLink mUserDetails of
               Nothing -> continue siteLink
               Just y -> do
+                warn $ "extraRedirect performed: " <> show siteLink <> " to " <> show y
                 void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                 continue y
@@ -328,6 +334,7 @@ defaultMain
           case mAuth of
             Just _ -> continue siteLink
             Nothing -> do
+              warn "No authTokenSignal while in /userDetails/*, being driven externally"
               -- in /userDetails while not logged in
               void $ setTimeout 1000 $ -- FIXME timeout
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
@@ -338,6 +345,7 @@ defaultMain
             case mAuth of
               Nothing -> continue siteLink
               Just _ -> do
+                warn "authTokenSignal while in /register, being driven externally"
                 -- in /register while logged in
                 void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
@@ -348,6 +356,7 @@ defaultMain
             case extraRedirect siteLink mUserDetails of
               Nothing -> continue siteLink
               Just y -> do
+                warn $ "extraRedirect performed: " <> show siteLink <> " to " <> show y <> ", being driven externally"
                 void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                 continue y
@@ -363,12 +372,14 @@ defaultMain
         case getUserDetailsLink siteLink of
           Just _ -> case mAuth of
             Nothing -> do
+              warn "No authTokenSignal while in /userDetails/*, after losing auth token"
               void $ setTimeout 1000 $ -- FIXME timeout
                 One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
               continue
             _ -> pure unit
           _ | siteLink == registerLink -> case mAuth of
               Just _ -> do
+                warn "authTokenSignal while in /register, after losing auth token"
                 void $ setTimeout 1000 $ -- FIXME timeout
                   One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
                 continue
@@ -379,6 +390,7 @@ defaultMain
               case extraRedirect siteLink mUserDetails of
                 Nothing -> pure unit
                 Just y -> do
+                  warn $ "extraRedirect performed: " <> show siteLink <> " to " <> show y <> ", after losing auth token"
                   void $ setTimeout 1000 $ -- FIXME timeout
                     One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
                   One.putQueue siteLinksSignal y
@@ -450,7 +462,6 @@ defaultMain
         One.putQueue authTokenDeltaInQueue deltaIn
         case deltaIn of
           AuthTokenDeltaInLogout -> killAuthTokenSub
-          _ -> pure unit
 
       authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
       authTokenInitIn = One.putQueue authTokenInitInQueue
