@@ -93,7 +93,7 @@ type Effects eff =
 
 
 
-type LocalCookingArgs siteLinks userDetails siteQueues eff =
+type LocalCookingArgs siteLinks userDetails eff =
   { content :: LocalCookingParams siteLinks userDetails eff -> ReactElement -- ^ Primary content process
   , topbar ::
     { imageSrc :: Location -- ^ Nify colored logo
@@ -112,8 +112,7 @@ type LocalCookingArgs siteLinks userDetails siteQueues eff =
   , error ::
     { content :: ReactElement
     }
-  , siteQueues    :: siteQueues -- ^ Subsidiary-site specific sparrow dependency queues, generated in outer scope
-  , deps          :: siteQueues -> SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
+  , deps          :: SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
   , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks -- ^ Additional redirection rules per-site
   , palette :: -- ^ Colors
     { primary   :: ColorPalette
@@ -126,7 +125,7 @@ type LocalCookingArgs siteLinks userDetails siteQueues eff =
 
 
 -- | Top-level entry point to the application
-defaultMain :: forall eff siteLinks userDetailsLinks userDetails siteQueues
+defaultMain :: forall eff siteLinks userDetailsLinks userDetails
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => Eq siteLinks
             => ToLocation siteLinks
@@ -136,11 +135,10 @@ defaultMain :: forall eff siteLinks userDetailsLinks userDetails siteQueues
             => Generic siteLinks
             => Generic userDetails
             => Show userDetails
-            => LocalCookingArgs siteLinks userDetails siteQueues (Effects eff)
+            => LocalCookingArgs siteLinks userDetails (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain
-  { siteQueues
-  , deps
+  { deps
   , topbar
   , leftDrawer
   , content
@@ -426,7 +424,7 @@ defaultMain
 
 
   -- Sparrow dependencies ------------------------------------------------------
-  dependenciesQueues <- newQueues siteQueues
+  dependenciesQueues <- newQueues
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
     dependencies dependenciesQueues deps
 
