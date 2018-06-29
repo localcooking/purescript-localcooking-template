@@ -114,6 +114,7 @@ type LocalCookingArgs siteLinks userDetails eff =
     }
   , deps          :: SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
   , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks -- ^ Additional redirection rules per-site
+  , extraProcessing :: siteLinks -> (siteLinks -> Eff eff Unit) -> Eff eff Unit
   , palette :: -- ^ Colors
     { primary   :: ColorPalette
     , secondary :: ColorPalette
@@ -147,6 +148,7 @@ defaultMain
   , palette
   , extendedNetwork
   , extraRedirect
+  , extraProcessing
   , error
   } = do
   -- inject events
@@ -209,8 +211,6 @@ defaultMain
           pure (PreliminaryAuthToken <<< Right <$> mTkn)
         tkn -> pure tkn
 
-  log $ "Preliminary auth token: " <> show preliminaryAuthToken
-
 
   -- Spit out confirm email message if it exists
   case serverToClient of
@@ -220,7 +220,11 @@ defaultMain
         One.putQueue globalErrorQueue $ GlobalErrorConfirmEmail confEmail
 
 
-  -- Global current page value - for `back` compatibility while being driven by `siteLinksSignal` -- should be read-only
+  preliminarySiteLinksQueue <- One.newQueue
+  let preliminarySiteLinks = One.putQueue preliminarySiteLinksQueue
+
+
+  -- Global current page value - for `back` compatibility while being driven by `siteLinksQueue` -- should be read-only
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks
     ) <- do
     initSiteLink <- do
@@ -266,6 +270,7 @@ defaultMain
               pure y
 
     sig <- IxSignal.make initSiteLink
+    extraProcessing initSiteLink preliminarySiteLinks
 
     -- handle back & forward
     flip onPopState w \(siteLink :: siteLinks) -> do
@@ -273,6 +278,7 @@ defaultMain
             -- warn $ "Continuing from onPopState parsed siteLink: " <> show siteLink <> " to " <> show x
             setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
             IxSignal.set x sig
+            extraProcessing x preliminarySiteLinks
       -- Top level redirect for browser back-button - no history change:
       case getUserDetailsLink siteLink of
         Just _ -> do
@@ -313,7 +319,7 @@ defaultMain
     pure sig
 
   -- Global new page emitter & history driver - write to this to change the page.
-  ( siteLinksSignal :: One.Queue (write :: WRITE) (Effects eff) siteLinks
+  ( siteLinksQueue :: One.Queue (write :: WRITE) (Effects eff) siteLinks
     ) <- do
     q <- One.newQueue
     One.onQueue q \(siteLink :: siteLinks) -> do
@@ -360,13 +366,14 @@ defaultMain
                 continue y
     pure (writeOnly q)
 
+  One.onQueue preliminarySiteLinksQueue (One.putQueue siteLinksQueue)
 
   -- rediect rules for async logout events
   let redirectOnAuth mAuth = do
         -- observe current page value at time of auth token value change
         siteLink <- IxSignal.get currentPageSignal
         let continue = do
-              One.putQueue siteLinksSignal rootLink
+              One.putQueue siteLinksQueue rootLink
         case getUserDetailsLink siteLink of
           Just _ -> case mAuth of
             Nothing -> do
@@ -391,7 +398,7 @@ defaultMain
                   warn $ "extraRedirect performed: " <> show siteLink <> " to " <> show y <> ", after losing auth token"
                   void $ setTimeout 1000 $ -- FIXME timeout
                     One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-                  One.putQueue siteLinksSignal y
+                  One.putQueue siteLinksQueue y
   IxSignal.subscribeLight redirectOnAuth authTokenSignal
 
   -- auth token storage and clearing on site-wide driven changes
@@ -540,7 +547,7 @@ defaultMain
   let params :: LocalCookingParams siteLinks userDetails (Effects eff)
       params =
         { toURI : \location -> toURI {scheme, authority: Just authority, location}
-        , siteLinks : One.putQueue siteLinksSignal
+        , siteLinks : One.putQueue siteLinksQueue
         , currentPageSignal
         , windowSizeSignal
         , authTokenSignal
