@@ -29,6 +29,7 @@ import Data.Tuple (Tuple (..))
 import Data.Either (Either (..))
 import Data.URI (Authority (..), Host (NameAddress), Scheme (..), Port (..))
 import Data.URI.Location (Location, toURI, class ToLocation, class FromLocation)
+import Data.URI.URI (URI)
 import Data.String (takeWhile) as String
 import Data.Int.Parse (parseInt, toRadix)
 import Data.UUID (GENUUID)
@@ -114,7 +115,13 @@ type LocalCookingArgs siteLinks userDetails eff =
     }
   , deps          :: SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
   , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks -- ^ Additional redirection rules per-site
-  , extraProcessing :: siteLinks -> (siteLinks -> Eff eff Unit) -> Eff eff Unit
+  , extraProcessing :: siteLinks
+                       -- restricted form of LocalCookingParams
+                    -> { siteLinks         :: siteLinks -> Eff eff Unit
+                       , toURI             :: Location -> URI
+                       , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
+                       , userDetailsSignal :: IxSignal eff (Maybe userDetails)
+                       } -> Eff eff Unit
   , palette :: -- ^ Colors
     { primary   :: ColorPalette
     , secondary :: ColorPalette
@@ -221,7 +228,12 @@ defaultMain
 
 
   preliminarySiteLinksQueue <- One.newQueue
-  let preliminarySiteLinks = One.putQueue preliminarySiteLinksQueue
+  let preliminaryParams =
+        { siteLinks: One.putQueue preliminarySiteLinksQueue
+        , toURI: \location -> toURI {scheme, authority: Just authority, location}
+        , authTokenSignal
+        , userDetailsSignal
+        }
 
 
   -- Global current page value - for `back` compatibility while being driven by `siteLinksQueue` -- should be read-only
@@ -270,7 +282,7 @@ defaultMain
               pure y
 
     sig <- IxSignal.make initSiteLink
-    extraProcessing initSiteLink preliminarySiteLinks
+    extraProcessing initSiteLink preliminaryParams
 
     -- handle back & forward
     flip onPopState w \(siteLink :: siteLinks) -> do
@@ -278,7 +290,7 @@ defaultMain
             -- warn $ "Continuing from onPopState parsed siteLink: " <> show siteLink <> " to " <> show x
             setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
             IxSignal.set x sig
-            extraProcessing x preliminarySiteLinks
+            extraProcessing x preliminaryParams
       -- Top level redirect for browser back-button - no history change:
       case getUserDetailsLink siteLink of
         Just _ -> do
@@ -330,6 +342,7 @@ defaultMain
             pushState' x h
             setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
             IxSignal.set x currentPageSignal
+            extraProcessing x preliminaryParams
       -- redirect rules
       case getUserDetailsLink siteLink of
         Just _ -> do
