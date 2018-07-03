@@ -9,7 +9,7 @@ import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Global.Error
   (GlobalError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..))
-import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy)
+import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy, breadcrumb)
 import LocalCooking.Global.User.Class (class UserDetails)
 import LocalCooking.Dependencies (dependencies, newQueues)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
@@ -37,6 +37,7 @@ import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Data.Generic (class Generic)
+import Data.NonEmpty (NonEmpty (..))
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
@@ -256,7 +257,9 @@ defaultMain
       let reAssign y = do
             warn $ "ReAssigning parsed siteLink, within currentPageSignal definition: " <> show siteLink <> " to " <> show y
             replaceState' y h
-            setDocumentTitle d $ defaultSiteLinksToDocumentTitle y
+          pushAssign y = do
+            warn $ "Pushing breadcrumb siteLink, within currentPageSignal definition: " <> show y
+            pushState' y h
 
       authToken <- IxSignal.get authTokenSignal
       z <- withRedirectPolicy
@@ -268,7 +271,15 @@ defaultMain
         , siteErrorQueue: writeOnly error.queue
         }
         siteLink
-      reAssign z
+      case breadcrumb z of
+        Nothing -> do
+          reAssign z
+        Just (NonEmpty head tail) -> do
+          reAssign head
+          traverse_ pushAssign tail
+          pushAssign z
+      setDocumentTitle d (defaultSiteLinksToDocumentTitle z)
+          
       pure z
 
     sig <- IxSignal.make initSiteLink
