@@ -55,6 +55,7 @@ import DOM (DOM)
 import DOM.HTML (window)
 import DOM.HTML.Window (location, document, history)
 import DOM.HTML.Window.Extra (widthToWindowSize)
+import DOM.HTML.History (back)
 import DOM.HTML.Location (hostname, protocol, port)
 import DOM.HTML.Document (body)
 import DOM.HTML.Document.Extra (setDocumentTitle)
@@ -65,7 +66,7 @@ import IxSignal.Internal (get, make, set, subscribeLight) as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
 import Signal.DOM (windowDimensions)
-import Queue.Types (writeOnly)
+import Queue.Types (writeOnly, readOnly)
 import Queue (READ, WRITE)
 import Queue.One as One
 import Browser.WebStorage (WEB_STORAGE)
@@ -94,7 +95,7 @@ type Effects eff =
 
 
 
-type LocalCookingArgs siteLinks userDetails eff =
+type LocalCookingArgs siteLinks userDetails siteError eff =
   { content :: LocalCookingParams siteLinks userDetails eff -> ReactElement -- ^ Primary content process
   , topbar ::
     { imageSrc :: Location -- ^ Nify colored logo
@@ -111,13 +112,22 @@ type LocalCookingArgs siteLinks userDetails eff =
       } -> Aff eff (Maybe userDetails)
     }
   , error ::
-    { content :: ReactElement
+    { content ::
+      { siteErrorQueue :: One.Queue (read :: READ) eff siteError
+      } -> ReactElement
+    , queue :: One.Queue (read :: READ, write :: WRITE) eff siteError
     }
   , deps          :: SparrowClientT eff (Eff eff) Unit -- ^ Apply those queues -- FIXME TODO MonadBaseControl?
-  , extraRedirect :: siteLinks -> Maybe userDetails -> Maybe siteLinks -- ^ Additional redirection rules per-site
+  , extraRedirect :: siteLinks
+                  -> Maybe userDetails
+                  -> Maybe
+                     { siteLink :: siteLinks
+                     , siteError :: siteError
+                     } -- ^ Additional redirection rules per-site
   , extraProcessing :: siteLinks
                        -- restricted form of LocalCookingParams
                     -> { siteLinks         :: siteLinks -> Eff eff Unit
+                       , back              :: Eff eff Unit
                        , toURI             :: Location -> URI
                        , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                        , userDetailsSignal :: IxSignal eff (Maybe userDetails)
@@ -133,7 +143,7 @@ type LocalCookingArgs siteLinks userDetails eff =
 
 
 -- | Top-level entry point to the application
-defaultMain :: forall eff siteLinks userDetailsLinks userDetails
+defaultMain :: forall eff siteLinks userDetailsLinks userDetails siteError
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => Eq siteLinks
             => ToLocation siteLinks
@@ -143,7 +153,7 @@ defaultMain :: forall eff siteLinks userDetailsLinks userDetails
             => Generic siteLinks
             => Generic userDetails
             => Show userDetails
-            => LocalCookingArgs siteLinks userDetails (Effects eff)
+            => LocalCookingArgs siteLinks userDetails siteError (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain
   { deps
@@ -230,6 +240,7 @@ defaultMain
   preliminarySiteLinksQueue <- One.newQueue
   let preliminaryParams =
         { siteLinks: One.putQueue preliminarySiteLinksQueue
+        , back: back h
         , toURI: \location -> toURI {scheme, authority: Just authority, location}
         , authTokenSignal
         , userDetailsSignal
@@ -254,6 +265,7 @@ defaultMain
         , authToken
         , userDetailsSignal
         , globalErrorQueue: writeOnly globalErrorQueue
+        , siteErrorQueue: writeOnly error.queue
         }
         siteLink
       reAssign z
@@ -276,6 +288,7 @@ defaultMain
         , authToken
         , userDetailsSignal
         , globalErrorQueue: writeOnly globalErrorQueue
+        , siteErrorQueue: writeOnly error.queue
         }
         siteLink
       continue y
@@ -299,6 +312,7 @@ defaultMain
         , authToken
         , userDetailsSignal
         , globalErrorQueue: writeOnly globalErrorQueue
+        , siteErrorQueue: writeOnly error.queue
         }
         siteLink
       continue y
@@ -318,6 +332,7 @@ defaultMain
           , authToken: mAuth
           , userDetailsSignal
           , globalErrorQueue: writeOnly globalErrorQueue
+          , siteErrorQueue: writeOnly error.queue
           }
           siteLink
         when (y /= siteLink) continue
@@ -509,7 +524,9 @@ defaultMain
             , security:
               { unsavedFormDataQueue: securityUnsavedFormData
               }
-            , error
+            , error:
+              { content: error.content {siteErrorQueue: readOnly error.queue}
+              }
             }
           }
       component = R.createClass reactSpec
