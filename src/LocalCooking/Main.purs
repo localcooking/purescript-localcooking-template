@@ -8,8 +8,8 @@ import LocalCooking.Types.ServerToClient (ServerToClient (..), serverToClient)
 import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Global.Error
-  (GlobalError (..), RedirectError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..))
-import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, registerLink, getUserDetailsLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks)
+  (GlobalError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..))
+import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy)
 import LocalCooking.Global.User.Class (class UserDetails)
 import LocalCooking.Dependencies (dependencies, newQueues)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
@@ -246,40 +246,18 @@ defaultMain
             warn $ "ReAssigning parsed siteLink, within currentPageSignal definition: " <> show siteLink <> " to " <> show y
             replaceState' y h
             setDocumentTitle d $ defaultSiteLinksToDocumentTitle y
-      case getUserDetailsLink siteLink of
-        Just _ -> do
-          -- observe preliminary auth token value immediately on boot
-          case preliminaryAuthToken of
-            Nothing -> do
-              warn "No preliminaryAuthToken while in /userDetails/*"
-              -- in /userDetails while not logged in
-              void $ setTimeout 1000 $ -- FIXME timeouts suck ass
-                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-              reAssign (rootLink :: siteLinks)
-              pure rootLink
-            _ -> pure siteLink
-        _ | siteLink == registerLink -> do
-          -- observe preliminary auth token value immediately on boot
-          case preliminaryAuthToken of
-            Just (PreliminaryAuthToken (Right _)) -> do
-              warn "preliminaryAuthToken while in /register"
-              -- in /register while logged in
-              void $ setTimeout 1000 $ -- FIXME timeout
-                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
-              reAssign (rootLink :: siteLinks)
-              pure rootLink
-            _ -> pure siteLink
-          | otherwise -> do
-          -- observe user details value immediately, for use with extra redirects
-          mUserDetails <- IxSignal.get userDetailsSignal
-          case extraRedirect siteLink mUserDetails of
-            Nothing -> pure siteLink
-            Just y -> do
-              warn $ "extraRedirect performed: " <> show siteLink <> " to " <> show y
-              void $ setTimeout 1000 $ -- FIXME timeout
-                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-              reAssign y
-              pure y
+
+      authToken <- IxSignal.get authTokenSignal
+      z <- withRedirectPolicy
+        { onError: pure unit
+        , extraRedirect
+        , authToken
+        , userDetailsSignal
+        , globalErrorQueue: writeOnly globalErrorQueue
+        }
+        siteLink
+      reAssign z
+      pure z
 
     sig <- IxSignal.make initSiteLink
     extraProcessing initSiteLink preliminaryParams
@@ -291,42 +269,16 @@ defaultMain
             setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
             IxSignal.set x sig
             extraProcessing x preliminaryParams
-      -- Top level redirect for browser back-button - no history change:
-      case getUserDetailsLink siteLink of
-        Just _ -> do
-          -- observe auth token value at time of onPopState
-          mAuth <- IxSignal.get authTokenSignal
-          case mAuth of
-            Just _ -> continue siteLink
-            Nothing -> do
-              warn "No authTokenSignal while in /userDetails/*"
-              -- in /userDetails while not logged in
-              void $ setTimeout 1000 $ -- FIXME timeouts suck ass
-                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-              replaceState' (rootLink :: siteLinks) h
-              continue rootLink
-        _ | siteLink == registerLink -> do
-            -- observe auth token value at time of onPopState
-            mAuth <- IxSignal.get authTokenSignal
-            case mAuth of
-              Nothing -> continue siteLink
-              Just _ -> do
-                warn "authTokenSignal while in /register"
-                -- in /register while logged in
-                void $ setTimeout 1000 $ -- FIXME timeout
-                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
-                replaceState' (rootLink :: siteLinks) h
-                continue rootLink
-          | otherwise -> do
-            -- observe user details value at time of onPopState, for use with extra redirects
-            mUserDetails <- IxSignal.get userDetailsSignal
-            case extraRedirect siteLink mUserDetails of
-              Nothing -> continue siteLink
-              Just y -> do
-                warn $ "extraRedirect performed: " <> show siteLink <> " to " <> show y
-                void $ setTimeout 1000 $ -- FIXME timeout
-                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-                continue y
+      authToken <- IxSignal.get authTokenSignal
+      y <- withRedirectPolicy
+        { onError: replaceState' (rootLink :: siteLinks) h
+        , extraRedirect
+        , authToken
+        , userDetailsSignal
+        , globalErrorQueue: writeOnly globalErrorQueue
+        }
+        siteLink
+      continue y
 
     pure sig
 
@@ -335,48 +287,21 @@ defaultMain
     ) <- do
     q <- One.newQueue
     One.onQueue q \(siteLink :: siteLinks) -> do
-      -- only respect changed pages -- FIXME ??
-      -- y <- IxSignal.get currentPageSignal
-      -- when (y /= siteLink) $ do
       let continue x = do
             pushState' x h
             setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
             IxSignal.set x currentPageSignal
             extraProcessing x preliminaryParams
-      -- redirect rules
-      case getUserDetailsLink siteLink of
-        Just _ -> do
-          -- observe auth token value at time of page change request
-          mAuth <- IxSignal.get authTokenSignal
-          case mAuth of
-            Just _ -> continue siteLink
-            Nothing -> do
-              warn "No authTokenSignal while in /userDetails/*, being driven externally"
-              -- in /userDetails while not logged in
-              void $ setTimeout 1000 $ -- FIXME timeout
-                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-              continue rootLink
-        _ | siteLink == registerLink -> do
-            -- observe auth token value at time of page change request
-            mAuth <- IxSignal.get authTokenSignal
-            case mAuth of
-              Nothing -> continue siteLink
-              Just _ -> do
-                warn "authTokenSignal while in /register, being driven externally"
-                -- in /register while logged in
-                void $ setTimeout 1000 $ -- FIXME timeout
-                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
-                continue rootLink
-          | otherwise -> do
-            -- observe user details value at time of page change request
-            mUserDetails <- IxSignal.get userDetailsSignal
-            case extraRedirect siteLink mUserDetails of
-              Nothing -> continue siteLink
-              Just y -> do
-                warn $ "extraRedirect performed: " <> show siteLink <> " to " <> show y <> ", being driven externally"
-                void $ setTimeout 1000 $ -- FIXME timeout
-                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-                continue y
+      authToken <- IxSignal.get authTokenSignal
+      y <- withRedirectPolicy
+        { onError: pure unit
+        , extraRedirect
+        , authToken
+        , userDetailsSignal
+        , globalErrorQueue: writeOnly globalErrorQueue
+        }
+        siteLink
+      continue y
     pure (writeOnly q)
 
   One.onQueue preliminarySiteLinksQueue (One.putQueue siteLinksQueue)
@@ -387,31 +312,15 @@ defaultMain
         siteLink <- IxSignal.get currentPageSignal
         let continue = do
               One.putQueue siteLinksQueue rootLink
-        case getUserDetailsLink siteLink of
-          Just _ -> case mAuth of
-            Nothing -> do
-              warn "No authTokenSignal while in /userDetails/*, after losing auth token"
-              void $ setTimeout 1000 $ -- FIXME timeout
-                One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-              continue
-            _ -> pure unit
-          _ | siteLink == registerLink -> case mAuth of
-              Just _ -> do
-                warn "authTokenSignal while in /register, after losing auth token"
-                void $ setTimeout 1000 $ -- FIXME timeout
-                  One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectRegisterAuth)
-                continue
-              _ -> pure unit
-            | otherwise -> do
-              -- observe user details value at time of auth token value change
-              mUserDetails <- IxSignal.get userDetailsSignal
-              case extraRedirect siteLink mUserDetails of
-                Nothing -> pure unit
-                Just y -> do
-                  warn $ "extraRedirect performed: " <> show siteLink <> " to " <> show y <> ", after losing auth token"
-                  void $ setTimeout 1000 $ -- FIXME timeout
-                    One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectUserDetailsNoAuth)
-                  One.putQueue siteLinksQueue y
+        y <- withRedirectPolicy
+          { onError: pure unit
+          , extraRedirect
+          , authToken: mAuth
+          , userDetailsSignal
+          , globalErrorQueue: writeOnly globalErrorQueue
+          }
+          siteLink
+        when (y /= siteLink) continue
   IxSignal.subscribeLight redirectOnAuth authTokenSignal
 
   -- auth token storage and clearing on site-wide driven changes
