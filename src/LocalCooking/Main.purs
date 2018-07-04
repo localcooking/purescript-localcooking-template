@@ -656,6 +656,7 @@ mkCurrentPageSignal
 
   -- handle back & forward
   flip onPopState w \(siteLink :: siteLinks) -> do
+    log $ "Received onPopState link: " <> show siteLink
     let continue x = do
           let resolveEffectiveDocumentTitle eX = case eX of
                 Left e -> warn $ "Couldn't resolve asyncToDocumentTitle in onPopState: " <> show e
