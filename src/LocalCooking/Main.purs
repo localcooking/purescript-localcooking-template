@@ -133,7 +133,7 @@ type LocalCookingArgs siteLinks userDetails siteError eff =
                        , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                        , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                        } -> Eff eff Unit
-  , toDocumentTitle :: siteLinks -> Eff eff String
+  , toDocumentTitle :: siteLinks -> Aff eff String
   , palette :: -- ^ Colors
     { primary   :: ColorPalette
     , secondary :: ColorPalette
@@ -280,7 +280,11 @@ defaultMain
           reAssign head
           traverse_ pushAssign tail
           pushAssign z
-      setDocumentTitle d =<< defaultSiteLinksToDocumentTitle toDocumentTitle z
+      let resolve eX = case eX of
+            Left e ->
+              warn $ "Error - initSiteLinks couldn't obtain document title - " <> show e
+            Right title -> setDocumentTitle d title
+      runAff_ resolve (defaultSiteLinksToDocumentTitle toDocumentTitle z)
           
       pure z
 
@@ -291,7 +295,11 @@ defaultMain
     flip onPopState w \(siteLink :: siteLinks) -> do
       let continue x = do
             -- warn $ "Continuing from onPopState parsed siteLink: " <> show siteLink <> " to " <> show x
-            setDocumentTitle d =<< defaultSiteLinksToDocumentTitle toDocumentTitle x
+            let resolve eX = case eX of
+                  Left e ->
+                    warn $ "Error - onPopState couldn't obtain document title - " <> show e
+                  Right title -> setDocumentTitle d title
+            runAff_ resolve (defaultSiteLinksToDocumentTitle toDocumentTitle x)
             IxSignal.set x sig
             extraProcessing x preliminaryParams
       authToken <- IxSignal.get authTokenSignal
@@ -315,7 +323,11 @@ defaultMain
     One.onQueue q \(siteLink :: siteLinks) -> do
       let continue x = do
             pushState' toDocumentTitle x h
-            setDocumentTitle d =<< defaultSiteLinksToDocumentTitle toDocumentTitle x
+            let resolve eX = case eX of
+                  Left e ->
+                    warn $ "Error - siteLinksQueue couldn't obtain document title - " <> show e
+                  Right title -> setDocumentTitle d title
+            runAff_ resolve (defaultSiteLinksToDocumentTitle toDocumentTitle x)
             IxSignal.set x currentPageSignal
             extraProcessing x preliminaryParams
       authToken <- IxSignal.get authTokenSignal
