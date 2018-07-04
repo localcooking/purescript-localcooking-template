@@ -133,6 +133,7 @@ type LocalCookingArgs siteLinks userDetails siteError eff =
                        , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                        , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                        } -> Eff eff Unit
+  , toDocumentTitle :: siteLinks -> Eff eff String
   , palette :: -- ^ Colors
     { primary   :: ColorPalette
     , secondary :: ColorPalette
@@ -167,6 +168,7 @@ defaultMain
   , extendedNetwork
   , extraRedirect
   , extraProcessing
+  , toDocumentTitle
   , error
   } = do
   -- inject events
@@ -256,10 +258,10 @@ defaultMain
       (siteLink :: siteLinks) <- initSiteLinks
       let reAssign y = do
             warn $ "ReAssigning parsed siteLink, within currentPageSignal definition: " <> show siteLink <> " to " <> show y
-            replaceState' y h
+            replaceState' toDocumentTitle y h
           pushAssign y = do
             warn $ "Pushing breadcrumb siteLink, within currentPageSignal definition: " <> show y
-            pushState' y h
+            pushState' toDocumentTitle y h
 
       authToken <- IxSignal.get authTokenSignal
       z <- withRedirectPolicy
@@ -278,7 +280,7 @@ defaultMain
           reAssign head
           traverse_ pushAssign tail
           pushAssign z
-      setDocumentTitle d (defaultSiteLinksToDocumentTitle z)
+      setDocumentTitle d =<< defaultSiteLinksToDocumentTitle toDocumentTitle z
           
       pure z
 
@@ -289,12 +291,12 @@ defaultMain
     flip onPopState w \(siteLink :: siteLinks) -> do
       let continue x = do
             -- warn $ "Continuing from onPopState parsed siteLink: " <> show siteLink <> " to " <> show x
-            setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
+            setDocumentTitle d =<< defaultSiteLinksToDocumentTitle toDocumentTitle x
             IxSignal.set x sig
             extraProcessing x preliminaryParams
       authToken <- IxSignal.get authTokenSignal
       y <- withRedirectPolicy
-        { onError: replaceState' (rootLink :: siteLinks) h
+        { onError: replaceState' toDocumentTitle (rootLink :: siteLinks) h
         , extraRedirect
         , authToken
         , userDetailsSignal
@@ -312,8 +314,8 @@ defaultMain
     q <- One.newQueue
     One.onQueue q \(siteLink :: siteLinks) -> do
       let continue x = do
-            pushState' x h
-            setDocumentTitle d (defaultSiteLinksToDocumentTitle x)
+            pushState' toDocumentTitle x h
+            setDocumentTitle d =<< defaultSiteLinksToDocumentTitle toDocumentTitle x
             IxSignal.set x currentPageSignal
             extraProcessing x preliminaryParams
       authToken <- IxSignal.get authTokenSignal
