@@ -65,7 +65,7 @@ import DOM.HTML.Types (HISTORY, htmlElementToElement, Window, HTMLDocument, Hist
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal (get, make, set, subscribeLight) as IxSignal
-import IxSignal.Extra (getNext) as IxSignal
+import IxSignal.Extra (onNext) as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
 import Signal.DOM (windowDimensions)
@@ -303,25 +303,32 @@ defaultMain
 
   One.onQueue preliminarySiteLinksQueue (One.putQueue siteLinksQueue)
 
+  hasDrawnFromUserDetails <- newRef false
+
   -- rediect rules for async logout events
   let redirectOnAuth mAuth = do
         -- observe current page value at time of auth token value change
         siteLink <- IxSignal.get currentPageSignal
-        userDetails <- IxSignal.get userDetailsSignal
-        let continue = do
-              One.putQueue siteLinksQueue rootLink
-        y <- withRedirectPolicy
-          { onError: pure unit
-          , extraRedirect
-          , authToken: mAuth
-          , userDetails
-          , globalErrorQueue: writeOnly globalErrorQueue
-          , siteErrorQueue: writeOnly error.queue
-          }
-          siteLink
-        when (y /= siteLink) $ do
-          log $ "Redirecting due to auth signal change - old: " <> show siteLink <> ", new: " <> show y <> ", user details: " <> show userDetails
-          continue
+        drawn <- readRef hasDrawnFromUserDetails
+        writeRef hasDrawnFromUserDetails true
+        let process userDetails = do
+              let continue = do
+                    One.putQueue siteLinksQueue rootLink
+              y <- withRedirectPolicy
+                { onError: pure unit
+                , extraRedirect
+                , authToken: mAuth
+                , userDetails
+                , globalErrorQueue: writeOnly globalErrorQueue
+                , siteErrorQueue: writeOnly error.queue
+                }
+                siteLink
+              when (y /= siteLink) $ do
+                log $ "Redirecting due to auth signal change - old: " <> show siteLink <> ", new: " <> show y <> ", user details: " <> show userDetails
+                continue
+        if drawn
+           then process =<< IxSignal.get userDetailsSignal
+           else IxSignal.onNext process userDetailsSignal
   IxSignal.subscribeLight redirectOnAuth authTokenSignal
 
   -- auth token storage and clearing on site-wide driven changes
@@ -618,36 +625,34 @@ mkCurrentPageSignal
 
   -- fetch user details' first value asynchronously, compensate for possibly erroneous
   -- initial site link / breadcrumbs, and handle the first possible redirect genuinely
-  let resolveUserDetails eX = case eX of
-        Left e -> warn $ "Couldn't use getNext to obtain first user details value: " <> show e
-        Right userDetails -> do
-          authToken <- IxSignal.get authTokenSignal
-          z <- withRedirectPolicy
-            { onError: pure unit
-            , extraRedirect
-            , authToken
-            , userDetails
-            , globalErrorQueue: writeOnly globalErrorQueue
-            , siteErrorQueue: writeOnly error.queue
-            }
-            initSiteLink
-          when (z /= initSiteLink) $ do
-            log $ "Redirecting after user details loaded - old: " <> show initSiteLink <> ", new: " <> show z
-            let resolveEffectiveDocumentTitle eX = case eX of
-                  Left e -> warn $ "Couldn't get effective document title after user details load: " <> show e
-                  Right pfx -> do
-                    steps <- readRef breadcrumbSteps
-                    replicateM_ steps (back h)
-                    case breadcrumb z of
-                      Nothing -> do
-                        reAssign pfx z
-                      Just (NonEmpty head tail) -> do
-                        reAssign pfx head
-                        traverse_ (pushAssign pfx) tail
-                        pushAssign pfx z
-                    setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx z)
-            runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle z)
-  runAff_ resolveUserDetails (IxSignal.getNext userDetailsSignal)
+  let resolveUserDetails userDetails = do
+        authToken <- IxSignal.get authTokenSignal
+        z <- withRedirectPolicy
+          { onError: pure unit
+          , extraRedirect
+          , authToken
+          , userDetails
+          , globalErrorQueue: writeOnly globalErrorQueue
+          , siteErrorQueue: writeOnly error.queue
+          }
+          initSiteLink
+        when (z /= initSiteLink) $ do
+          log $ "Redirecting after user details loaded - old: " <> show initSiteLink <> ", new: " <> show z
+          let resolveEffectiveDocumentTitle eX = case eX of
+                Left e -> warn $ "Couldn't get effective document title after user details load: " <> show e
+                Right pfx -> do
+                  steps <- readRef breadcrumbSteps
+                  replicateM_ steps (back h)
+                  case breadcrumb z of
+                    Nothing -> do
+                      reAssign pfx z
+                    Just (NonEmpty head tail) -> do
+                      reAssign pfx head
+                      traverse_ (pushAssign pfx) tail
+                      pushAssign pfx z
+                  setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx z)
+          runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle z)
+  IxSignal.onNext resolveUserDetails userDetailsSignal
 
   -- handle back & forward
   flip onPopState w \(siteLink :: siteLinks) -> do
