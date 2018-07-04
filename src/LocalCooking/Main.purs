@@ -154,6 +154,7 @@ defaultMain :: forall eff siteLinks userDetailsLinks userDetails siteError
             => ToLocation siteLinks
             => FromLocation siteLinks
             => Show siteLinks
+            => Show userDetails
             => UserDetails userDetails
             => Generic siteLinks
             => Generic userDetails
@@ -256,18 +257,19 @@ defaultMain
 
   -- Global current page value - for `back` compatibility while being driven by `siteLinksQueue` -- should be read-only
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks
-    ) <- mkCurrentPageSignal
-          { w,h,d
-          , authTokenSignal
-          , userDetailsSignal
-          , initToDocumentTitle
-          , asyncToDocumentTitle
-          , extraProcessing
-          , extraRedirect
-          , preliminaryParams
-          , globalErrorQueue: writeOnly globalErrorQueue
-          , error
-          }
+    ) <-
+    mkCurrentPageSignal
+      { w,h,d
+      , authTokenSignal
+      , userDetailsSignal
+      , initToDocumentTitle
+      , asyncToDocumentTitle
+      , extraProcessing
+      , extraRedirect
+      , preliminaryParams
+      , globalErrorQueue: writeOnly globalErrorQueue
+      , error
+      }
 
   -- Global new page emitter & history driver - write to this to change the page.
   ( siteLinksQueue :: One.Queue (write :: WRITE) (Effects eff) siteLinks
@@ -294,6 +296,8 @@ defaultMain
         , siteErrorQueue: writeOnly error.queue
         }
         siteLink
+      when (y /= siteLink) $
+        warn $ "Not driving siteLink to intended target - intended: " <> show siteLink <> ", actual: " <> show y
       continue y
     pure (writeOnly q)
 
@@ -315,7 +319,9 @@ defaultMain
           , siteErrorQueue: writeOnly error.queue
           }
           siteLink
-        when (y /= siteLink) continue
+        when (y /= siteLink) $ do
+          log $ "Redirecting due to auth signal change - old: " <> show siteLink <> ", new: " <> show y <> ", user details: " <> show userDetails
+          continue
   IxSignal.subscribeLight redirectOnAuth authTokenSignal
 
   -- auth token storage and clearing on site-wide driven changes
@@ -518,6 +524,7 @@ defaultMain
 -- | Global current page value - for `back` compatibility while being driven by `siteLinksQueue` -- should be read-only
 mkCurrentPageSignal :: forall eff siteLinks userDetails userDetailsLinks siteError
                      . Show siteLinks
+                    => Show userDetails
                     => ToLocation siteLinks
                     => FromLocation siteLinks
                     => Eq siteLinks
@@ -625,6 +632,7 @@ mkCurrentPageSignal
             }
             initSiteLink
           when (z /= initSiteLink) $ do
+            log $ "Redirecting after user details loaded - old: " <> show initSiteLink <> ", new: " <> show z
             let resolveEffectiveDocumentTitle eX = case eX of
                   Left e -> warn $ "Couldn't get effective document title after user details load: " <> show e
                   Right pfx -> do
