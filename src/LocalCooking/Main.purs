@@ -312,8 +312,9 @@ defaultMain
         drawn <- readRef hasDrawnFromUserDetails
         writeRef hasDrawnFromUserDetails true
         let process userDetails = do
-              let continue = do
-                    One.putQueue siteLinksQueue rootLink
+              let continue link = do
+                    One.putQueue siteLinksQueue link
+                    extraProcessing link preliminaryParams
               y <- withRedirectPolicy
                 { onError: pure unit
                 , extraRedirect
@@ -325,7 +326,7 @@ defaultMain
                 siteLink
               when (y /= siteLink) $ do
                 log $ "Redirecting due to auth signal change - old: " <> show siteLink <> ", new: " <> show y <> ", user details: " <> show userDetails
-                continue
+                continue y
         if drawn
            then process =<< IxSignal.get userDetailsSignal
            else IxSignal.onNext process userDetailsSignal
@@ -617,11 +618,11 @@ mkCurrentPageSignal
           Left e -> warn $ "Couldn't resolve asyncToDocumentTitle in initSiteLinks: " <> show e
           Right pfx -> setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx siteLink)
     runAff_ resolveEffectiveInitDocumentTitle (asyncToDocumentTitle siteLink)
+    extraProcessing siteLink preliminaryParams
 
     pure siteLink
 
   sig <- IxSignal.make initSiteLink
-  extraProcessing initSiteLink preliminaryParams
 
   -- fetch user details' first value asynchronously, compensate for possibly erroneous
   -- initial site link / breadcrumbs, and handle the first possible redirect genuinely
@@ -651,6 +652,7 @@ mkCurrentPageSignal
                       traverse_ (pushAssign pfx) tail
                       pushAssign pfx z
                   setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx z)
+                  extraProcessing initSiteLink preliminaryParams
           runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle z)
   IxSignal.onNext resolveUserDetails userDetailsSignal
 
