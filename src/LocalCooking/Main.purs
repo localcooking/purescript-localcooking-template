@@ -38,6 +38,7 @@ import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Data.Generic (class Generic)
 import Data.NonEmpty (NonEmpty (..))
+import Data.Array as Array
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
@@ -60,10 +61,11 @@ import DOM.HTML.History (back)
 import DOM.HTML.Location (hostname, protocol, port)
 import DOM.HTML.Document (body)
 import DOM.HTML.Document.Extra (setDocumentTitle)
-import DOM.HTML.Types (HISTORY, htmlElementToElement)
+import DOM.HTML.Types (HISTORY, htmlElementToElement, Window, HTMLDocument, History)
 
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal (get, make, set, subscribeLight) as IxSignal
+import IxSignal.Extra (getNext) as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
 import Signal.DOM (windowDimensions)
@@ -133,7 +135,8 @@ type LocalCookingArgs siteLinks userDetails siteError eff =
                        , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
                        , userDetailsSignal :: IxSignal eff (Maybe userDetails)
                        } -> Eff eff Unit
-  , toDocumentTitle :: siteLinks -> Aff eff String
+  , initToDocumentTitle :: siteLinks -> String -- ^ Get prefix for initial state
+  , asyncToDocumentTitle :: siteLinks -> Aff eff String -- ^ Get prefix effectfully
   , palette :: -- ^ Colors
     { primary   :: ColorPalette
     , secondary :: ColorPalette
@@ -168,7 +171,8 @@ defaultMain
   , extendedNetwork
   , extraRedirect
   , extraProcessing
-  , toDocumentTitle
+  , initToDocumentTitle
+  , asyncToDocumentTitle
   , error
   } = do
   -- inject events
@@ -252,69 +256,18 @@ defaultMain
 
   -- Global current page value - for `back` compatibility while being driven by `siteLinksQueue` -- should be read-only
   ( currentPageSignal :: IxSignal (Effects eff) siteLinks
-    ) <- do
-    initSiteLink <- do
-      -- initial redirects
-      (siteLink :: siteLinks) <- initSiteLinks
-      let reAssign y = do
-            warn $ "ReAssigning parsed siteLink, within currentPageSignal definition: " <> show siteLink <> " to " <> show y
-            replaceState' toDocumentTitle y h
-          pushAssign y = do
-            warn $ "Pushing breadcrumb siteLink, within currentPageSignal definition: " <> show y
-            pushState' toDocumentTitle y h
-
-      authToken <- IxSignal.get authTokenSignal
-      z <- withRedirectPolicy
-        { onError: pure unit
-        , extraRedirect
-        , authToken
-        , userDetailsSignal
-        , globalErrorQueue: writeOnly globalErrorQueue
-        , siteErrorQueue: writeOnly error.queue
-        }
-        siteLink
-      case breadcrumb z of
-        Nothing -> do
-          reAssign z
-        Just (NonEmpty head tail) -> do
-          reAssign head
-          traverse_ pushAssign tail
-          pushAssign z
-      let resolve eX = case eX of
-            Left e ->
-              warn $ "Error - initSiteLinks couldn't obtain document title - " <> show e
-            Right title -> setDocumentTitle d title
-      runAff_ resolve (defaultSiteLinksToDocumentTitle toDocumentTitle z)
-          
-      pure z
-
-    sig <- IxSignal.make initSiteLink
-    extraProcessing initSiteLink preliminaryParams
-
-    -- handle back & forward
-    flip onPopState w \(siteLink :: siteLinks) -> do
-      let continue x = do
-            -- warn $ "Continuing from onPopState parsed siteLink: " <> show siteLink <> " to " <> show x
-            let resolve eX = case eX of
-                  Left e ->
-                    warn $ "Error - onPopState couldn't obtain document title - " <> show e
-                  Right title -> setDocumentTitle d title
-            runAff_ resolve (defaultSiteLinksToDocumentTitle toDocumentTitle x)
-            IxSignal.set x sig
-            extraProcessing x preliminaryParams
-      authToken <- IxSignal.get authTokenSignal
-      y <- withRedirectPolicy
-        { onError: replaceState' toDocumentTitle (rootLink :: siteLinks) h
-        , extraRedirect
-        , authToken
-        , userDetailsSignal
-        , globalErrorQueue: writeOnly globalErrorQueue
-        , siteErrorQueue: writeOnly error.queue
-        }
-        siteLink
-      continue y
-
-    pure sig
+    ) <- mkCurrentPageSignal
+          { w,h,d
+          , authTokenSignal
+          , userDetailsSignal
+          , initToDocumentTitle
+          , asyncToDocumentTitle
+          , extraProcessing
+          , extraRedirect
+          , preliminaryParams
+          , globalErrorQueue: writeOnly globalErrorQueue
+          , error
+          }
 
   -- Global new page emitter & history driver - write to this to change the page.
   ( siteLinksQueue :: One.Queue (write :: WRITE) (Effects eff) siteLinks
@@ -322,20 +275,21 @@ defaultMain
     q <- One.newQueue
     One.onQueue q \(siteLink :: siteLinks) -> do
       let continue x = do
-            pushState' toDocumentTitle x h
-            let resolve eX = case eX of
-                  Left e ->
-                    warn $ "Error - siteLinksQueue couldn't obtain document title - " <> show e
-                  Right title -> setDocumentTitle d title
-            runAff_ resolve (defaultSiteLinksToDocumentTitle toDocumentTitle x)
+            let resolveEffectiveDocumentTitle eX = case eX of
+                  Left e -> warn $ "Couldn't resolve asyncToDocumentTitle in siteLinksQueue: " <> show e
+                  Right pfx -> do
+                    pushState' pfx x h
+                    setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx x)
+            runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle x)
             IxSignal.set x currentPageSignal
             extraProcessing x preliminaryParams
       authToken <- IxSignal.get authTokenSignal
+      userDetails <- IxSignal.get userDetailsSignal
       y <- withRedirectPolicy
         { onError: pure unit
         , extraRedirect
         , authToken
-        , userDetailsSignal
+        , userDetails
         , globalErrorQueue: writeOnly globalErrorQueue
         , siteErrorQueue: writeOnly error.queue
         }
@@ -349,13 +303,14 @@ defaultMain
   let redirectOnAuth mAuth = do
         -- observe current page value at time of auth token value change
         siteLink <- IxSignal.get currentPageSignal
+        userDetails <- IxSignal.get userDetailsSignal
         let continue = do
               One.putQueue siteLinksQueue rootLink
         y <- withRedirectPolicy
           { onError: pure unit
           , extraRedirect
           , authToken: mAuth
-          , userDetailsSignal
+          , userDetails
           , globalErrorQueue: writeOnly globalErrorQueue
           , siteErrorQueue: writeOnly error.queue
           }
@@ -556,3 +511,165 @@ defaultMain
           }
       component = R.createClass reactSpec
   traverse_ (render (R.createFactory component props) <<< htmlElementToElement) =<< body d
+
+
+
+
+-- | Global current page value - for `back` compatibility while being driven by `siteLinksQueue` -- should be read-only
+mkCurrentPageSignal :: forall eff siteLinks userDetails userDetailsLinks siteError
+                     . Show siteLinks
+                    => ToLocation siteLinks
+                    => FromLocation siteLinks
+                    => Eq siteLinks
+                    => LocalCookingSiteLinks siteLinks userDetailsLinks
+                    => { w :: Window
+                       , h :: History
+                       , d :: HTMLDocument
+                       , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                       , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
+                       , initToDocumentTitle :: siteLinks -> String
+                       , asyncToDocumentTitle :: siteLinks -> Aff (Effects eff) String
+                       , extraRedirect :: siteLinks
+                                       -> Maybe userDetails
+                                       -> Maybe
+                                          { siteLink :: siteLinks
+                                          , siteError :: siteError
+                                          } -- ^ Additional redirection rules per-site
+                       , extraProcessing :: siteLinks
+                                         -- restricted form of LocalCookingParams
+                                         -> { siteLinks         :: siteLinks -> Eff (Effects eff) Unit
+                                            , back              :: Eff (Effects eff) Unit
+                                            , toURI             :: Location -> URI
+                                            , authTokenSignal   :: IxSignal (Effects eff) (Maybe AuthToken)
+                                            , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
+                                            } -> Eff (Effects eff) Unit
+                       , preliminaryParams ::
+                         { siteLinks :: siteLinks -> Eff (Effects eff) Unit
+                         , back :: Eff (Effects eff) Unit
+                         , toURI :: Location -> URI
+                         , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                         , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
+                         }
+                       , globalErrorQueue :: One.Queue (write :: WRITE) (Effects eff) GlobalError
+                       , error ::
+                         { content ::
+                           { siteErrorQueue :: One.Queue (read :: READ) (Effects eff) siteError
+                           } -> ReactElement
+                         , queue :: One.Queue (read :: READ, write :: WRITE) (Effects eff) siteError
+                         }
+                       }
+                    -> Eff (Effects eff) (IxSignal (Effects eff) siteLinks)
+mkCurrentPageSignal
+  { w,h,d
+  , authTokenSignal
+  , userDetailsSignal
+  , initToDocumentTitle
+  , asyncToDocumentTitle
+  , extraProcessing
+  , extraRedirect
+  , preliminaryParams
+  , globalErrorQueue
+  , error
+  } = do
+  let reAssign pfx y = do
+        log $ "ReAssigning parsed siteLink, within currentPageSignal definition: " <> show y
+        replaceState' pfx y h
+      pushAssign pfx y = do
+        log $ "Pushing breadcrumb siteLink, within currentPageSignal definition: " <> show y
+        pushState' pfx y h
+
+  breadcrumbSteps <- newRef 0
+
+  initSiteLink <- do
+    -- initial site link, and redirects after user details loads
+    (siteLink :: siteLinks) <- initSiteLinks
+    authToken <- IxSignal.get authTokenSignal
+
+    let initPfx = initToDocumentTitle siteLink
+
+    -- assign potential expected parents
+    case breadcrumb siteLink of
+      Nothing -> do
+        writeRef breadcrumbSteps 0
+        reAssign initPfx siteLink
+      Just (NonEmpty head tail) -> do
+        writeRef breadcrumbSteps (1 + Array.length tail)
+        reAssign initPfx head
+        traverse_ (pushAssign initPfx) tail
+        pushAssign initPfx siteLink
+    setDocumentTitle d (defaultSiteLinksToDocumentTitle initPfx siteLink)
+
+    let resolveEffectiveInitDocumentTitle eX = case eX of
+          Left e -> warn $ "Couldn't resolve asyncToDocumentTitle in initSiteLinks: " <> show e
+          Right pfx -> setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx siteLink)
+    runAff_ resolveEffectiveInitDocumentTitle (asyncToDocumentTitle siteLink)
+
+    pure siteLink
+
+  sig <- IxSignal.make initSiteLink
+  extraProcessing initSiteLink preliminaryParams
+
+  -- fetch user details' first value asynchronously, compensate for possibly erroneous
+  -- initial site link / breadcrumbs, and handle the first possible redirect genuinely
+  let resolveUserDetails eX = case eX of
+        Left e -> warn $ "Couldn't use getNext to obtain first user details value: " <> show e
+        Right userDetails -> do
+          authToken <- IxSignal.get authTokenSignal
+          z <- withRedirectPolicy
+            { onError: pure unit
+            , extraRedirect
+            , authToken
+            , userDetails
+            , globalErrorQueue: writeOnly globalErrorQueue
+            , siteErrorQueue: writeOnly error.queue
+            }
+            initSiteLink
+          when (z /= initSiteLink) $ do
+            let resolveEffectiveDocumentTitle eX = case eX of
+                  Left e -> warn $ "Couldn't get effective document title after user details load: " <> show e
+                  Right pfx -> do
+                    steps <- readRef breadcrumbSteps
+                    replicateM_ steps (back h)
+                    case breadcrumb z of
+                      Nothing -> do
+                        reAssign pfx z
+                      Just (NonEmpty head tail) -> do
+                        reAssign pfx head
+                        traverse_ (pushAssign pfx) tail
+                        pushAssign pfx z
+                    setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx z)
+            runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle z)
+  runAff_ resolveUserDetails (IxSignal.getNext userDetailsSignal)
+
+  -- handle back & forward
+  flip onPopState w \(siteLink :: siteLinks) -> do
+    let continue x = do
+          let resolveEffectiveDocumentTitle eX = case eX of
+                Left e -> warn $ "Couldn't resolve asyncToDocumentTitle in onPopState: " <> show e
+                Right pfx -> setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx x)
+          runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle x)
+          IxSignal.set x sig
+          extraProcessing x preliminaryParams
+    authToken <- IxSignal.get authTokenSignal
+    userDetails <- IxSignal.get userDetailsSignal
+    y <- withRedirectPolicy
+      { onError: replaceState' (initToDocumentTitle (rootLink :: siteLinks)) (rootLink :: siteLinks) h
+                  -- okay to rely on initToDocumentTitle, because rootLink is guaranteed non-effective prefix
+      , extraRedirect
+      , authToken
+      , userDetails
+      , globalErrorQueue: writeOnly globalErrorQueue
+      , siteErrorQueue: writeOnly error.queue
+      }
+      siteLink
+    continue y
+
+  pure sig
+
+
+
+
+replicateM_ :: forall m. Monad m => Int -> m Unit -> m Unit
+replicateM_ n x
+  | n == 0 = pure unit
+  | otherwise = x *> replicateM_ (n - 1) x
