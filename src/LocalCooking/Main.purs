@@ -9,7 +9,7 @@ import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Global.Error
   (GlobalError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..))
-import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy, breadcrumb)
+import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy)
 import LocalCooking.Global.User.Class (class UserDetails)
 import LocalCooking.Dependencies (dependencies, newQueues)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
@@ -37,8 +37,6 @@ import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Data.Generic (class Generic)
-import Data.NonEmpty (NonEmpty (..))
-import Data.Array as Array
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
 import Control.Monad.Eff.Ref (REF, newRef, readRef, writeRef)
@@ -589,11 +587,6 @@ mkCurrentPageSignal
   let reAssign pfx y = do
         log $ "ReAssigning parsed siteLink, within currentPageSignal definition: " <> show y
         replaceState' pfx y h
-      pushAssign pfx y = do
-        log $ "Pushing breadcrumb siteLink, within currentPageSignal definition: " <> show y
-        pushState' pfx y h
-
-  breadcrumbSteps <- newRef 0
 
   initSiteLink <- do
     -- initial site link, and redirects after user details loads
@@ -602,16 +595,7 @@ mkCurrentPageSignal
 
     let initPfx = initToDocumentTitle siteLink
 
-    -- assign potential expected parents
-    case breadcrumb siteLink of
-      Nothing -> do
-        writeRef breadcrumbSteps 0
-        reAssign initPfx siteLink
-      Just (NonEmpty head tail) -> do
-        writeRef breadcrumbSteps (1 + Array.length tail)
-        reAssign initPfx head
-        traverse_ (pushAssign initPfx) tail
-        pushAssign initPfx siteLink
+    reAssign initPfx siteLink
     setDocumentTitle d (defaultSiteLinksToDocumentTitle initPfx siteLink)
 
     let resolveEffectiveInitDocumentTitle eX = case eX of
@@ -625,7 +609,7 @@ mkCurrentPageSignal
   sig <- IxSignal.make initSiteLink
 
   -- fetch user details' first value asynchronously, compensate for possibly erroneous
-  -- initial site link / breadcrumbs, and handle the first possible redirect genuinely
+  -- initial site link, and handle the first possible redirect genuinely
   let resolveUserDetails userDetails = do
         authToken <- IxSignal.get authTokenSignal
         z <- withRedirectPolicy
@@ -642,19 +626,13 @@ mkCurrentPageSignal
           let resolveEffectiveDocumentTitle eX = case eX of
                 Left e -> warn $ "Couldn't get effective document title after user details load: " <> show e
                 Right pfx -> do
-                  steps <- readRef breadcrumbSteps
-                  replicateM_ steps (back h)
-                  case breadcrumb z of
-                    Nothing -> do
-                      reAssign pfx z
-                    Just (NonEmpty head tail) -> do
-                      reAssign pfx head
-                      traverse_ (pushAssign pfx) tail
-                      pushAssign pfx z
+                  reAssign pfx z
                   setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx z)
-                  extraProcessing initSiteLink preliminaryParams
+                  extraProcessing z preliminaryParams
           runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle z)
   IxSignal.onNext resolveUserDetails userDetailsSignal
+
+  
 
   -- handle back & forward
   flip onPopState w \(siteLink :: siteLinks) -> do
