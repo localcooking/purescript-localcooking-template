@@ -149,14 +149,14 @@ type LocalCookingArgs siteLinks userDetails siteError eff =
 defaultMain :: forall eff siteLinks userDetailsLinks userDetails siteError
              . LocalCookingSiteLinks siteLinks userDetailsLinks
             => Eq siteLinks
-            => ToLocation siteLinks
-            => FromLocation siteLinks
+            => Eq userDetails
             => Show siteLinks
             => Show userDetails
-            => UserDetails userDetails
             => Generic siteLinks
             => Generic userDetails
-            => Show userDetails
+            => ToLocation siteLinks
+            => FromLocation siteLinks
+            => UserDetails userDetails
             => LocalCookingArgs siteLinks userDetails siteError (Effects eff)
             -> Eff (Effects eff) Unit
 defaultMain
@@ -529,11 +529,11 @@ defaultMain
 
 -- | Global current page value - for `back` compatibility while being driven by `siteLinksQueue` -- should be read-only
 mkCurrentPageSignal :: forall eff siteLinks userDetails userDetailsLinks siteError
-                     . Show siteLinks
+                     . Eq siteLinks
+                    => Show siteLinks
                     => Show userDetails
                     => ToLocation siteLinks
                     => FromLocation siteLinks
-                    => Eq siteLinks
                     => LocalCookingSiteLinks siteLinks userDetailsLinks
                     => { w :: Window
                        , h :: History
