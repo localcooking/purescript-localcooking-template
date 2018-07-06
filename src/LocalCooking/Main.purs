@@ -62,7 +62,7 @@ import DOM.HTML.Document.Extra (setDocumentTitle)
 import DOM.HTML.Types (HISTORY, htmlElementToElement, Window, HTMLDocument, History)
 
 import IxSignal.Internal (IxSignal)
-import IxSignal.Internal (get, make, set, setDiff, subscribe, subscribeLight) as IxSignal
+import IxSignal.Internal (get, make, set, setDiff, subscribe, subscribeLight, subscribeDiffLight) as IxSignal
 import IxSignal.Extra (onNext) as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
@@ -334,7 +334,7 @@ defaultMain
   let localstorageOnAuth mAuth = case mAuth of
         Nothing -> clearAuthToken
         Just authToken -> storeAuthToken authToken -- FIXME overwrites already stored value retreived on boot
-  IxSignal.subscribeLight localstorageOnAuth authTokenSignal
+  IxSignal.subscribeDiffLight localstorageOnAuth authTokenSignal
 
 
   -- Global window size value
@@ -473,7 +473,7 @@ defaultMain
         case mAuth of
           Nothing -> do
             log "No access token for user details"
-            IxSignal.setDiff Nothing userDetailsSignal
+            IxSignal.set Nothing userDetailsSignal
           Just authToken -> userInitIn $ UserInitIn $ AccessInitIn {token: authToken, subj: JSONUnit}
   IxSignal.subscribe userDetailsOnAuth authTokenSignal
 
