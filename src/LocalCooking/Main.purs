@@ -62,7 +62,7 @@ import DOM.HTML.Document.Extra (setDocumentTitle)
 import DOM.HTML.Types (HISTORY, htmlElementToElement, Window, HTMLDocument, History)
 
 import IxSignal.Internal (IxSignal)
-import IxSignal.Internal (get, make, set, subscribeLight) as IxSignal
+import IxSignal.Internal (get, make, setDiff, subscribeLight) as IxSignal
 import IxSignal.Extra (onNext) as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
@@ -281,7 +281,7 @@ defaultMain
                     pushState' pfx x h
                     setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx x)
             runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle x)
-            IxSignal.set x currentPageSignal
+            IxSignal.setDiff x currentPageSignal
             extraProcessing x preliminaryParams
       authToken <- IxSignal.get authTokenSignal
       userDetails <- IxSignal.get userDetailsSignal
@@ -350,7 +350,7 @@ defaultMain
       when (w'.w /= lastWindowWidth) $ do
         writeRef windowWidthRef w'.w
         let size = widthToWindowSize w'.w
-        IxSignal.set size out
+        IxSignal.setDiff size out
     pure out
 
 
@@ -371,18 +371,18 @@ defaultMain
 
   let authTokenOnDeltaOut deltaOut = case deltaOut of
         AuthTokenDeltaOutRevoked ->
-          IxSignal.set Nothing authTokenSignal
+          IxSignal.setDiff Nothing authTokenSignal
           -- TODO anything else needed to be cleaned up?
       authTokenOnInitOut mInitOut = case mInitOut of
         Nothing -> do
-          IxSignal.set Nothing authTokenSignal
+          IxSignal.setDiff Nothing authTokenSignal
           One.putQueue globalErrorQueue (GlobalErrorAuthFailure AuthLoginFailure)
           One.putQueue authTokenKillificator unit
         Just initOut -> case initOut of
           AuthTokenInitOutSuccess authToken -> do
-            IxSignal.set (Just authToken) authTokenSignal
+            IxSignal.setDiff (Just authToken) authTokenSignal
           AuthTokenInitOutFailure e -> do
-            IxSignal.set Nothing authTokenSignal
+            IxSignal.setDiff Nothing authTokenSignal
             One.putQueue globalErrorQueue (GlobalErrorAuthFailure e)
             One.putQueue authTokenKillificator unit
 
@@ -415,10 +415,10 @@ defaultMain
         let resolve eX = do
               case eX of
                 Left _ -> do
-                  IxSignal.set Nothing userDetailsSignal
+                  IxSignal.setDiff Nothing userDetailsSignal
                   One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut)
                 Right mUserDetails -> do
-                  IxSignal.set mUserDetails userDetailsSignal
+                  IxSignal.setDiff mUserDetails userDetailsSignal
                   One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
         runAff_ resolve $
           case mInitOut of
@@ -466,8 +466,8 @@ defaultMain
         log $ "fetching user deets: " <> show mAuth
         case mAuth of
           Nothing -> do
-            log "lidderally why"
-            IxSignal.set Nothing userDetailsSignal
+            log "No access token for user details"
+            IxSignal.setDiff Nothing userDetailsSignal
           Just authToken -> userInitIn $ UserInitIn $ AccessInitIn {token: authToken, subj: JSONUnit}
   IxSignal.subscribeLight userDetailsOnAuth authTokenSignal
 
@@ -642,7 +642,7 @@ mkCurrentPageSignal
                 Left e -> warn $ "Couldn't resolve asyncToDocumentTitle in onPopState: " <> show e
                 Right pfx -> setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx x)
           runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle x)
-          IxSignal.set x sig
+          IxSignal.setDiff x sig
           extraProcessing x preliminaryParams
     authToken <- IxSignal.get authTokenSignal
     userDetails <- IxSignal.get userDetailsSignal
