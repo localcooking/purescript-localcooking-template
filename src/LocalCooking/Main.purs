@@ -386,7 +386,7 @@ defaultMain
             IxSignal.set (Just authToken) authTokenSignal
           AuthTokenInitOutFailure e -> do
             log $ "Auth login failure: " <> show e
-            IxSignal.setDiff Nothing authTokenSignal
+            IxSignal.set Nothing authTokenSignal
             One.putQueue globalErrorQueue (GlobalErrorAuthFailure e)
             One.putQueue authTokenKillificator unit
 
