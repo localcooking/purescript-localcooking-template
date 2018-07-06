@@ -11,6 +11,7 @@ import Control.Monad.Aff (runAff_)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Unsafe (unsafeCoerceEff)
 import Control.Monad.Eff.Ref (REF)
+import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Exception (EXCEPTION, throwException)
 
 import Sparrow.Client.Queue (SparrowClientQueues, callSparrowClientQueues)
@@ -94,6 +95,7 @@ performActionPaginationState getPState getPAction action props _ =
 type Effects eff =
   ( ref :: REF
   , exception :: EXCEPTION
+  , console :: CONSOLE
   | eff)
 
 
