@@ -402,7 +402,9 @@ defaultMain
           AuthTokenDeltaInLogout -> killAuthTokenSub
 
       authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
-      authTokenInitIn = One.putQueue authTokenInitInQueue
+      authTokenInitIn initIn = do
+        log "Sending auth init in"
+        One.putQueue authTokenInitInQueue initIn
 
   -- Auth Token singleton dependency mounting
   userDeltaInQueue <- writeOnly <$> One.newQueue
