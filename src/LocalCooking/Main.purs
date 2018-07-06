@@ -62,7 +62,7 @@ import DOM.HTML.Document.Extra (setDocumentTitle)
 import DOM.HTML.Types (HISTORY, htmlElementToElement, Window, HTMLDocument, History)
 
 import IxSignal.Internal (IxSignal)
-import IxSignal.Internal (get, make, setDiff, subscribeLight) as IxSignal
+import IxSignal.Internal (get, make, set, setDiff, subscribe, subscribeLight) as IxSignal
 import IxSignal.Extra (onNext) as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
@@ -370,18 +370,22 @@ defaultMain
   authTokenKillificator <- One.newQueue -- hack for killing the subscription internally, yet external for this scope
 
   let authTokenOnDeltaOut deltaOut = case deltaOut of
-        AuthTokenDeltaOutRevoked ->
+        AuthTokenDeltaOutRevoked -> do
+          log "Auth token revoked"
           IxSignal.setDiff Nothing authTokenSignal
           -- TODO anything else needed to be cleaned up?
       authTokenOnInitOut mInitOut = case mInitOut of
         Nothing -> do
+          log "Auth login failure"
           IxSignal.setDiff Nothing authTokenSignal
           One.putQueue globalErrorQueue (GlobalErrorAuthFailure AuthLoginFailure)
           One.putQueue authTokenKillificator unit
         Just initOut -> case initOut of
           AuthTokenInitOutSuccess authToken -> do
-            IxSignal.setDiff (Just authToken) authTokenSignal
+            log $ "Auth login success: " <> show authToken
+            IxSignal.set (Just authToken) authTokenSignal
           AuthTokenInitOutFailure e -> do
+            log $ "Auth login failure: " <> show e
             IxSignal.setDiff Nothing authTokenSignal
             One.putQueue globalErrorQueue (GlobalErrorAuthFailure e)
             One.putQueue authTokenKillificator unit
@@ -414,10 +418,12 @@ defaultMain
       userOnInitOut mInitOut = do
         let resolve eX = do
               case eX of
-                Left _ -> do
+                Left e -> do
+                  log $ "User details obtain failure: " <> show e
                   IxSignal.setDiff Nothing userDetailsSignal
                   One.putQueue globalErrorQueue (GlobalErrorUserEmail UserEmailNoInitOut)
                 Right mUserDetails -> do
+                  log $ "User details obtain success: " <> show mUserDetails
                   IxSignal.setDiff mUserDetails userDetailsSignal
                   One.putQueue loginCloseQueue unit -- FIXME user details only obtained from login?? Idempotent?
         runAff_ resolve $
@@ -469,7 +475,7 @@ defaultMain
             log "No access token for user details"
             IxSignal.setDiff Nothing userDetailsSignal
           Just authToken -> userInitIn $ UserInitIn $ AccessInitIn {token: authToken, subj: JSONUnit}
-  IxSignal.subscribeLight userDetailsOnAuth authTokenSignal
+  IxSignal.subscribe userDetailsOnAuth authTokenSignal
 
 
   -- universal React component params
