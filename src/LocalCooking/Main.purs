@@ -393,7 +393,6 @@ defaultMain
   killAuthTokenSub <- mountSparrowClientQueuesSingleton dependenciesQueues.authTokenQueues.authTokenQueues
     authTokenDeltaInQueue authTokenInitInQueue authTokenOnDeltaOut authTokenOnInitOut
   One.onQueue authTokenKillificator \_ -> do
-    log "killing auth token sub"
     killAuthTokenSub -- hack applied
 
   -- Top-level delta in issuer
@@ -475,11 +474,9 @@ defaultMain
   let userDetailsOnAuth mAuth = do
         log $ "fetching user deets: " <> show mAuth
         case mAuth of
-          Nothing -> do
-            log "No access token for user details"
-            IxSignal.set Nothing userDetailsSignal
+          Nothing -> IxSignal.set Nothing userDetailsSignal
           Just authToken -> userInitIn $ UserInitIn $ AccessInitIn {token: authToken, subj: JSONUnit}
-  IxSignal.subscribe userDetailsOnAuth authTokenSignal
+  IxSignal.subscribeLight userDetailsOnAuth authTokenSignal
 
 
   -- universal React component params
@@ -632,7 +629,7 @@ mkCurrentPageSignal
           }
           initSiteLink
         when (z /= initSiteLink) $ do
-          log $ "Redirecting after user details loaded - old: " <> show initSiteLink <> ", new: " <> show z
+          log $ "Redirecting after user details loaded - old: " <> show initSiteLink <> ", new: " <> show z <> ", user details: " <> show userDetails
           let resolveEffectiveDocumentTitle eX = case eX of
                 Left e -> warn $ "Couldn't get effective document title after user details load: " <> show e
                 Right pfx -> do
