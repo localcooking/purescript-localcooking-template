@@ -392,7 +392,9 @@ defaultMain
 
   killAuthTokenSub <- mountSparrowClientQueuesSingleton dependenciesQueues.authTokenQueues.authTokenQueues
     authTokenDeltaInQueue authTokenInitInQueue authTokenOnDeltaOut authTokenOnInitOut
-  One.onQueue authTokenKillificator \_ -> killAuthTokenSub -- hack applied
+  One.onQueue authTokenKillificator \_ -> do
+    log "killing auth token sub"
+    killAuthTokenSub -- hack applied
 
   -- Top-level delta in issuer
   let authTokenDeltaIn :: AuthTokenDeltaIn -> Eff (Effects eff) Unit
