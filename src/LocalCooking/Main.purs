@@ -400,8 +400,10 @@ defaultMain
       authTokenDeltaIn deltaIn = do
         log "Sending auth delta in"
         One.putQueue authTokenDeltaInQueue deltaIn
-        -- case deltaIn of
-        --   AuthTokenDeltaInLogout -> One.putQueue authTokenKillificator unit
+        case deltaIn of
+          AuthTokenDeltaInLogout -> do
+            IxSignal.setDiff Nothing authTokenSignal
+            One.putQueue authTokenKillificator unit
 
       authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
       authTokenInitIn initIn = do
