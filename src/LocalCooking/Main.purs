@@ -8,7 +8,7 @@ import LocalCooking.Types.ServerToClient (ServerToClient (..), serverToClient)
 import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Global.Error
-  (GlobalError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..))
+  (GlobalError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..), RedirectError (RedirectLogout))
 import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy)
 import LocalCooking.Global.User.Class (class UserDetails)
 import LocalCooking.Dependencies (dependencies, newQueues)
@@ -402,6 +402,8 @@ defaultMain
         One.putQueue authTokenDeltaInQueue deltaIn
         case deltaIn of
           AuthTokenDeltaInLogout -> do
+            One.putQueue siteLinksQueue rootLink
+            One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectLogout)
             IxSignal.setDiff Nothing authTokenSignal
             One.putQueue authTokenKillificator unit
 
