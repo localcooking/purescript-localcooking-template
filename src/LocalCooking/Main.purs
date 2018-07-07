@@ -398,9 +398,10 @@ defaultMain
   -- Top-level delta in issuer
   let authTokenDeltaIn :: AuthTokenDeltaIn -> Eff (Effects eff) Unit
       authTokenDeltaIn deltaIn = do
+        log "Sending auth delta in"
         One.putQueue authTokenDeltaInQueue deltaIn
-        case deltaIn of
-          AuthTokenDeltaInLogout -> killAuthTokenSub
+        -- case deltaIn of
+        --   AuthTokenDeltaInLogout -> One.putQueue authTokenKillificator unit
 
       authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
       authTokenInitIn initIn = do
