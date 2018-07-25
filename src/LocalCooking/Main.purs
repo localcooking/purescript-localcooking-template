@@ -14,7 +14,6 @@ import LocalCooking.Global.User.Class (class UserDetails)
 import LocalCooking.Dependencies (dependencies, newQueues)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
 import LocalCooking.Dependencies.Common (UserDeltaOut (..), UserInitOut (..), UserDeltaIn, UserInitIn (..))
-import LocalCooking.Dependencies.AccessToken.Generic (AccessInitIn (..))
 import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Semantics.Common (User)
 import Facebook.State (FacebookLoginUnsavedFormData (..))
@@ -36,6 +35,7 @@ import Data.UUID (GENUUID)
 import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut.JSONUnit (JSONUnit (..))
+import Data.Argonaut.JSONTuple (JSONTuple (..))
 import Data.Generic (class Generic)
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
@@ -480,7 +480,7 @@ defaultMain
         log $ "fetching user deets: " <> show mAuth
         case mAuth of
           Nothing -> IxSignal.set Nothing userDetailsSignal
-          Just authToken -> userInitIn $ UserInitIn $ AccessInitIn {token: authToken, subj: JSONUnit}
+          Just authToken -> userInitIn $ UserInitIn $ JSONTuple authToken JSONUnit
   IxSignal.subscribeLight userDetailsOnAuth authTokenSignal
 
 
