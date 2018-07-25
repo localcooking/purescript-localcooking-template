@@ -95,6 +95,15 @@ type Effects eff =
   | eff)
 
 
+-- | Restricted form of LocalCookingParams
+type ExtraProcessingParams siteLinks userDetails eff =
+  { siteLinks         :: siteLinks -> Eff eff Unit
+  , back              :: Eff eff Unit
+  , toURI             :: Location -> URI
+  , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
+  , userDetailsSignal :: IxSignal eff (Maybe userDetails)
+  }
+
 
 type LocalCookingArgs siteLinks userDetails siteError eff =
   { content :: LocalCookingParams siteLinks userDetails eff -> ReactElement -- ^ Primary content process
@@ -125,14 +134,7 @@ type LocalCookingArgs siteLinks userDetails siteError eff =
                      { siteLink :: siteLinks
                      , siteError :: siteError
                      } -- ^ Additional redirection rules per-site
-  , extraProcessing :: siteLinks
-                       -- restricted form of LocalCookingParams
-                    -> { siteLinks         :: siteLinks -> Eff eff Unit
-                       , back              :: Eff eff Unit
-                       , toURI             :: Location -> URI
-                       , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
-                       , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-                       } -> Eff eff Unit
+  , extraProcessing :: siteLinks -> ExtraProcessingParams siteLinks userDetails eff -> Eff eff Unit
   , initToDocumentTitle :: siteLinks -> String -- ^ Get prefix for initial state
   , asyncToDocumentTitle :: siteLinks -> Aff eff String -- ^ Get prefix effectfully
   , palette :: -- ^ Colors
