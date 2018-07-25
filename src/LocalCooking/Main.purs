@@ -179,6 +179,9 @@ defaultMain
   , asyncToDocumentTitle
   , error
   } = do
+  -- clear loader and SEO content
+  clearBody
+
   -- inject events
   injectTapEvent
   _ <- registerShim
