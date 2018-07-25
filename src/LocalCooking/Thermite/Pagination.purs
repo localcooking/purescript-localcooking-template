@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Lens (Lens', Prism', lens, prism', (%~), matching, clonePrism, review)
+import Data.Lens (Lens', Prism', (%~), matching, clonePrism, review)
 import Data.Maybe (Maybe(..))
 import Type.Proxy (Proxy (..))
 import Control.Monad.Aff (runAff_)

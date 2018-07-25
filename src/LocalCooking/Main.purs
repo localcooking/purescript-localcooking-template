@@ -62,7 +62,7 @@ import DOM.HTML.Document.Extra (setDocumentTitle)
 import DOM.HTML.Types (HISTORY, htmlElementToElement, Window, HTMLDocument, History)
 
 import IxSignal.Internal (IxSignal)
-import IxSignal.Internal (get, make, set, setDiff, subscribe, subscribeLight, subscribeDiffLight) as IxSignal
+import IxSignal.Internal (get, make, set, setDiff, subscribeLight, subscribeDiffLight) as IxSignal
 import IxSignal.Extra (onNext) as IxSignal
 import Signal.Internal as Signal
 import Signal.Time (debounce)
@@ -75,6 +75,9 @@ import WebSocket (WEBSOCKET)
 import Network.HTTP.Affjax (AJAX)
 import Crypto.Scrypt (SCRYPT)
 
+
+
+foreign import clearBody :: forall eff. Eff (dom :: DOM | eff) Unit
 
 
 type Effects eff =
