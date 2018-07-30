@@ -9,7 +9,9 @@ import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Global.Error
   (GlobalError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..), RedirectError (RedirectLogout))
-import LocalCooking.Global.Links.Class (class LocalCookingSiteLinks, rootLink, pushState', replaceState', onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy)
+import LocalCooking.Global.Links.Class
+  ( class LocalCookingSiteLinks, rootLink, pushState', replaceState'
+  , onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy)
 import LocalCooking.Global.User.Class (class UserDetails)
 import LocalCooking.Dependencies (dependencies, newQueues)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
@@ -139,7 +141,9 @@ type LocalCookingArgs siteLinks userDetails siteError eff =
                      } -- ^ Additional redirection rules per-site
   , extraProcessing :: siteLinks -> ExtraProcessingParams siteLinks userDetails eff -> Eff eff Unit
   , initToDocumentTitle :: siteLinks -> String -- ^ Get prefix for initial state
-  , asyncToDocumentTitle :: siteLinks -> Aff eff String -- ^ Get prefix effectfully
+  , asyncToDocumentTitle :: One.Queue (write :: WRITE) eff GlobalError
+                         -> siteLinks
+                         -> Aff eff String -- ^ Get prefix effectfully
   , palette :: -- ^ Colors
     { primary   :: ColorPalette
     , secondary :: ColorPalette
@@ -288,7 +292,7 @@ defaultMain
                   Right pfx -> do
                     pushState' pfx x h
                     setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx x)
-            runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle x)
+            runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle (writeOnly globalErrorQueue) x)
             IxSignal.setDiff x currentPageSignal
             extraProcessing x preliminaryParams
       authToken <- IxSignal.get authTokenSignal
@@ -561,7 +565,9 @@ mkCurrentPageSignal :: forall eff siteLinks userDetails userDetailsLinks siteErr
                        , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
                        , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                        , initToDocumentTitle :: siteLinks -> String
-                       , asyncToDocumentTitle :: siteLinks -> Aff (Effects eff) String
+                       , asyncToDocumentTitle :: One.Queue (write :: WRITE) (Effects eff) GlobalError
+                                              -> siteLinks
+                                              -> Aff (Effects eff) String
                        , extraRedirect :: siteLinks
                                        -> Maybe userDetails
                                        -> Maybe
@@ -621,7 +627,7 @@ mkCurrentPageSignal
     let resolveEffectiveInitDocumentTitle eX = case eX of
           Left e -> warn $ "Couldn't resolve asyncToDocumentTitle in initSiteLinks: " <> show e
           Right pfx -> setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx siteLink)
-    runAff_ resolveEffectiveInitDocumentTitle (asyncToDocumentTitle siteLink)
+    runAff_ resolveEffectiveInitDocumentTitle (asyncToDocumentTitle globalErrorQueue siteLink)
     extraProcessing siteLink preliminaryParams
 
     pure siteLink
@@ -649,7 +655,7 @@ mkCurrentPageSignal
                   reAssign pfx z
                   setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx z)
                   extraProcessing z preliminaryParams
-          runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle z)
+          runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle globalErrorQueue z)
   IxSignal.onNext resolveUserDetails userDetailsSignal
 
   
@@ -661,7 +667,7 @@ mkCurrentPageSignal
           let resolveEffectiveDocumentTitle eX = case eX of
                 Left e -> warn $ "Couldn't resolve asyncToDocumentTitle in onPopState: " <> show e
                 Right pfx -> setDocumentTitle d (defaultSiteLinksToDocumentTitle pfx x)
-          runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle x)
+          runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle globalErrorQueue x)
           IxSignal.setDiff x sig
           extraProcessing x preliminaryParams
     authToken <- IxSignal.get authTokenSignal
