@@ -107,6 +107,7 @@ type ExtraProcessingParams siteLinks userDetails eff =
   , toURI             :: Location -> URI
   , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
   , userDetailsSignal :: IxSignal eff (Maybe userDetails)
+  , globalErrorQueue  :: One.Queue (write :: WRITE) eff GlobalError
   }
 
 
@@ -262,6 +263,7 @@ defaultMain
         , toURI: \location -> toURI {scheme, authority: Just authority, location}
         , authTokenSignal
         , userDetailsSignal
+        , globalErrorQueue: writeOnly globalErrorQueue
         }
 
 
@@ -505,6 +507,7 @@ defaultMain
         , windowSizeSignal
         , authTokenSignal
         , userDetailsSignal
+        , globalErrorQueue: writeOnly globalErrorQueue
         }
 
   -- Run User Interface
@@ -575,20 +578,9 @@ mkCurrentPageSignal :: forall eff siteLinks userDetails userDetailsLinks siteErr
                                           , siteError :: siteError
                                           } -- ^ Additional redirection rules per-site
                        , extraProcessing :: siteLinks
-                                         -- restricted form of LocalCookingParams
-                                         -> { siteLinks         :: siteLinks -> Eff (Effects eff) Unit
-                                            , back              :: Eff (Effects eff) Unit
-                                            , toURI             :: Location -> URI
-                                            , authTokenSignal   :: IxSignal (Effects eff) (Maybe AuthToken)
-                                            , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                                            } -> Eff (Effects eff) Unit
-                       , preliminaryParams ::
-                         { siteLinks :: siteLinks -> Eff (Effects eff) Unit
-                         , back :: Eff (Effects eff) Unit
-                         , toURI :: Location -> URI
-                         , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
-                         , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
-                         }
+                                         -> ExtraProcessingParams siteLinks userDetails (Effects eff)
+                                         -> Eff (Effects eff) Unit
+                       , preliminaryParams :: ExtraProcessingParams siteLinks userDetails (Effects eff)
                        , globalErrorQueue :: One.Queue (write :: WRITE) (Effects eff) GlobalError
                        , error ::
                          { content ::
