@@ -1,13 +1,13 @@
 module LocalCooking.Types.ServerToClient.Type where
 
-import LocalCooking.Common.User.Password (HashedPassword)
 import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken)
 import LocalCooking.Semantics.Common (ConfirmEmailError)
-import Facebook.State (FacebookLoginUnsavedFormData)
+import LocalCooking.Spec.FormData (FacebookLoginUnsavedFormData)
 import Facebook.Types (FacebookClientId)
 import Google.ReCaptcha (ReCaptchaSiteKey)
 
 import Prelude
+import Data.Password (HashedPassword)
 import Data.Maybe (Maybe)
 import Data.Generic (class Generic, gShow, gEq)
 import Data.Argonaut (class DecodeJson, class EncodeJson, decodeJson, (.?), (:=), (~>), jsonEmptyObject)
