@@ -5,10 +5,12 @@ import LocalCooking.Spec.Content.Register (RegisterUnsavedFormData (..))
 import LocalCooking.Spec.Content.UserDetails.Security (SecurityUnsavedFormData (..))
 import LocalCooking.Spec.Types.Env (Env)
 import LocalCooking.Spec.FormData (FacebookLoginUnsavedFormData (..))
-import LocalCooking.Types.ServerToClient (ServerToClient (..), serverToClient)
+import LocalCooking.Types.ServerToClient
+  ( ServerToClient (..), serverToClient, getInitPreliminarySessionToken)
 import LocalCooking.Thermite.Params (LocalCookingParams)
 import LocalCooking.Global.Error
-  (GlobalError (..), UserEmailError (..), SecurityMessage (..), RedirectError (RedirectLogout), LoginError)
+  ( GlobalError (..), UserEmailError (..), SecurityMessage (..)
+  , RedirectError (RedirectLogout), LoginError)
 import LocalCooking.Global.Links.Class
   ( class LocalCookingSiteLinks, rootLink, pushState', replaceState'
   , onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy)
@@ -21,7 +23,9 @@ import Auth.AccessToken.Session
   , SessionTokenDeltaOut (..), SessionTokenInitOut (..)
   , SessionTokenDeltaIn (..), SessionTokenInitIn (..)
   , mountSessionTokenQueues)
-import Auth.AccessToken.Session.Storage (getStoredSessionToken, storeSessionToken, clearSessionToken)
+import Auth.AccessToken.Session.Storage
+  ( getStoredSessionToken, storeSessionToken
+  , clearSessionToken, processPreliminarySessionToken)
 
 import Sparrow.Client (allocateDependencies)
 import Sparrow.Client.Queue (mountSparrowClientQueuesSingleton)
@@ -244,12 +248,7 @@ defaultMain
 
   -- Fetch the preliminary auth token from `env`, or LocalStorage
   ( preliminarySessionToken :: Maybe (PreliminarySessionToken LoginError)
-    ) <- case serverToClient of
-      ServerToClient {sessionToken} -> case sessionToken of
-        Nothing -> do
-          mTkn <- getStoredSessionToken
-          pure (PreliminarySessionToken <<< JSONRight <$> mTkn)
-        tkn -> pure tkn
+    ) <- getInitPreliminarySessionToken
 
 
   -- Spit out confirm email message if it exists
@@ -260,6 +259,7 @@ defaultMain
         One.putQueue globalErrorQueue $ GlobalErrorConfirmEmail confEmail
 
 
+  -- hack for non-recursive Eff
   preliminarySiteLinksQueue <- One.newQueue
   let preliminaryParams =
         { siteLinks: One.putQueue preliminarySiteLinksQueue
@@ -317,6 +317,7 @@ defaultMain
       continue y
     pure (writeOnly q)
 
+  -- hack applied
   One.onQueue preliminarySiteLinksQueue (One.putQueue siteLinksQueue)
 
   hasDrawnFromUserDetails <- newRef false
@@ -391,53 +392,6 @@ defaultMain
          One.putQueue globalErrorQueue $ GlobalErrorRedirect RedirectLogout
          )
     dependenciesQueues.sessionTokenQueues
-  -- Auth Token singleton dependency mounting
-  -- sessionTokenDeltaInQueue <- writeOnly <$> One.newQueue
-  -- sessionTokenInitInQueue <- writeOnly <$> One.newQueue
-  -- sessionTokenKillificator <- One.newQueue -- hack for killing the subscription internally, yet external for this scope
-
-  -- let sessionTokenOnDeltaOut deltaOut = case deltaOut of
-  --       SessionTokenDeltaOutRevoked -> do
-  --         log "Auth token revoked"
-  --         IxSignal.setDiff Nothing sessionTokenSignal
-  --         -- TODO anything else needed to be cleaned up?
-  --     sessionTokenOnInitOut mInitOut = case mInitOut of
-  --       Nothing -> do
-  --         log "Auth login failure"
-  --         IxSignal.setDiff Nothing sessionTokenSignal
-  --         One.putQueue globalErrorQueue $ GlobalErrorSessionFailure SessionTokenInternalError
-  --         One.putQueue sessionTokenKillificator unit
-  --       Just initOut -> case initOut of
-  --         SessionTokenInitOutSuccess sessionToken -> do
-  --           log $ "Auth login success: " <> show sessionToken
-  --           IxSignal.set (Just sessionToken) sessionTokenSignal
-  --         SessionTokenInitOutFailure e -> do
-  --           log $ "Auth login failure: " <> show e
-  --           IxSignal.set Nothing sessionTokenSignal
-  --           One.putQueue globalErrorQueue (GlobalErrorSessionFailure e)
-  --           One.putQueue sessionTokenKillificator unit
-
-  -- killSessionTokenSub <- mountSparrowClientQueuesSingleton dependenciesQueues.sessionTokenQueues.sessionTokenQueues
-  --   sessionTokenDeltaInQueue sessionTokenInitInQueue sessionTokenOnDeltaOut sessionTokenOnInitOut
-  -- One.onQueue sessionTokenKillificator \_ -> do
-  --   killSessionTokenSub -- hack applied
-
-  -- -- Top-level delta in issuer
-  -- let sessionTokenDeltaIn :: SessionTokenDeltaIn -> Eff (Effects eff) Unit
-  --     sessionTokenDeltaIn deltaIn = do
-  --       log "Sending auth delta in"
-  --       One.putQueue sessionTokenDeltaInQueue deltaIn
-  --       case deltaIn of
-  --         SessionTokenDeltaInLogout -> do
-  --           One.putQueue siteLinksQueue rootLink
-  --           One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectLogout)
-  --           IxSignal.setDiff Nothing sessionTokenSignal
-  --           One.putQueue sessionTokenKillificator unit
-
-  --     sessionTokenInitIn :: SessionTokenInitIn -> Eff (Effects eff) Unit
-  --     sessionTokenInitIn initIn = do
-  --       log "Sending auth init in"
-  --       One.putQueue sessionTokenInitInQueue initIn
 
   -- Auth Token singleton dependency mounting
   userDeltaInQueue <- writeOnly <$> One.newQueue
@@ -488,17 +442,10 @@ defaultMain
   -- Handle preliminary auth token
   case preliminarySessionToken of
     Nothing -> log "no preliminary token"
-    (Just (PreliminarySessionToken eErr)) -> case eErr of
-      JSONRight prescribedSessionToken ->
-        sessionTokenInitIn (SessionTokenInitInExists prescribedSessionToken)
-      JSONLeft e -> do -- FIXME ...needs timeout?
-        One.putQueue globalErrorQueue $ GlobalErrorSessionFailure e
-        -- try and recover even during weird init error
-        mTkn <- getStoredSessionToken
-        case mTkn of
-          Nothing -> log "no stored token either"
-          Just storedSessionToken ->
-            sessionTokenInitIn (SessionTokenInitInExists storedSessionToken)
+    (Just tkn) -> processPreliminarySessionToken
+      sessionTokenInitIn
+      (One.putQueue globalErrorQueue <<< GlobalErrorSessionFailure)
+      tkn
 
 
 
