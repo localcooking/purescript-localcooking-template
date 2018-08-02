@@ -7,18 +7,21 @@ import LocalCooking.Spec.Types.Env (Env)
 import LocalCooking.Spec.FormData (FacebookLoginUnsavedFormData (..))
 import LocalCooking.Types.ServerToClient (ServerToClient (..), serverToClient)
 import LocalCooking.Thermite.Params (LocalCookingParams)
-import LocalCooking.Auth.Storage (getStoredAuthToken, storeAuthToken, clearAuthToken)
 import LocalCooking.Global.Error
-  (GlobalError (..), UserEmailError (..), AuthTokenFailure (..), SecurityMessage (..), RedirectError (RedirectLogout))
+  (GlobalError (..), UserEmailError (..), SecurityMessage (..), RedirectError (RedirectLogout), LoginError)
 import LocalCooking.Global.Links.Class
   ( class LocalCookingSiteLinks, rootLink, pushState', replaceState'
   , onPopState, defaultSiteLinksToDocumentTitle, initSiteLinks, withRedirectPolicy)
 import LocalCooking.Global.User.Class (class UserDetails)
 import LocalCooking.Dependencies (dependencies, newQueues)
-import LocalCooking.Dependencies.AuthToken (PreliminaryAuthToken (..), AuthTokenDeltaOut (..), AuthTokenInitOut (..), AuthTokenDeltaIn (..), AuthTokenInitIn (..))
 import LocalCooking.Dependencies.Common (UserDeltaOut (..), UserInitOut (..), UserDeltaIn, UserInitIn (..))
-import LocalCooking.Common.AccessToken.Auth (AuthToken)
 import LocalCooking.Semantics.Common (User)
+import Auth.AccessToken.Session
+  ( SessionToken, PreliminarySessionToken (..), SessionTokenFailure (..)
+  , SessionTokenDeltaOut (..), SessionTokenInitOut (..)
+  , SessionTokenDeltaIn (..), SessionTokenInitIn (..)
+  , mountSessionTokenQueues)
+import Auth.AccessToken.Session.Storage (getStoredSessionToken, storeSessionToken, clearSessionToken)
 
 import Sparrow.Client (allocateDependencies)
 import Sparrow.Client.Queue (mountSparrowClientQueuesSingleton)
@@ -38,6 +41,7 @@ import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Data.Argonaut.JSONTuple (JSONTuple (..))
+import Data.Argonaut.JSONEither (JSONEither (..))
 import Data.Generic (class Generic)
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
@@ -105,7 +109,7 @@ type ExtraProcessingParams siteLinks userDetails eff =
   { siteLinks         :: siteLinks -> Eff eff Unit
   , back              :: Eff eff Unit
   , toURI             :: Location -> URI
-  , authTokenSignal   :: IxSignal eff (Maybe AuthToken)
+  , sessionTokenSignal   :: IxSignal eff (Maybe SessionToken)
   , userDetailsSignal :: IxSignal eff (Maybe userDetails)
   , globalErrorQueue  :: One.Queue (write :: WRITE) eff GlobalError
   }
@@ -230,8 +234,8 @@ defaultMain
   ( globalErrorQueue :: One.Queue (read :: READ, write :: WRITE) (Effects eff) GlobalError
     ) <- One.newQueue
 
-  -- Global AuthToken value -- FIXME start as Nothing? Can't pack PreliminaryAuthToken on processing?
-  ( authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+  -- Global SessionToken value -- FIXME start as Nothing? Can't pack PreliminarySessionToken on processing?
+  ( sessionTokenSignal :: IxSignal (Effects eff) (Maybe SessionToken)
     ) <- IxSignal.make Nothing
 
   -- Global userDetails value -- FIXME ditto
@@ -239,12 +243,12 @@ defaultMain
     ) <- IxSignal.make Nothing
 
   -- Fetch the preliminary auth token from `env`, or LocalStorage
-  ( preliminaryAuthToken :: Maybe PreliminaryAuthToken
+  ( preliminarySessionToken :: Maybe (PreliminarySessionToken LoginError)
     ) <- case serverToClient of
-      ServerToClient {authToken} -> case authToken of
+      ServerToClient {sessionToken} -> case sessionToken of
         Nothing -> do
-          mTkn <- getStoredAuthToken
-          pure (PreliminaryAuthToken <<< Right <$> mTkn)
+          mTkn <- getStoredSessionToken
+          pure (PreliminarySessionToken <<< JSONRight <$> mTkn)
         tkn -> pure tkn
 
 
@@ -261,7 +265,7 @@ defaultMain
         { siteLinks: One.putQueue preliminarySiteLinksQueue
         , back: back h
         , toURI: \location -> toURI {scheme, authority: Just authority, location}
-        , authTokenSignal
+        , sessionTokenSignal
         , userDetailsSignal
         , globalErrorQueue: writeOnly globalErrorQueue
         }
@@ -272,7 +276,7 @@ defaultMain
     ) <-
     mkCurrentPageSignal
       { w,h,d
-      , authTokenSignal
+      , sessionTokenSignal
       , userDetailsSignal
       , initToDocumentTitle
       , asyncToDocumentTitle
@@ -297,12 +301,12 @@ defaultMain
             runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle (writeOnly globalErrorQueue) x)
             IxSignal.setDiff x currentPageSignal
             extraProcessing x preliminaryParams
-      authToken <- IxSignal.get authTokenSignal
+      sessionToken <- IxSignal.get sessionTokenSignal
       userDetails <- IxSignal.get userDetailsSignal
       y <- withRedirectPolicy
         { onError: pure unit
         , extraRedirect
-        , authToken
+        , sessionToken
         , userDetails
         , globalErrorQueue: writeOnly globalErrorQueue
         , siteErrorQueue: writeOnly error.queue
@@ -330,7 +334,7 @@ defaultMain
               y <- withRedirectPolicy
                 { onError: pure unit
                 , extraRedirect
-                , authToken: mAuth
+                , sessionToken: mAuth
                 , userDetails
                 , globalErrorQueue: writeOnly globalErrorQueue
                 , siteErrorQueue: writeOnly error.queue
@@ -342,13 +346,13 @@ defaultMain
         if drawn
            then process =<< IxSignal.get userDetailsSignal
            else IxSignal.onNext process userDetailsSignal
-  IxSignal.subscribeLight redirectOnAuth authTokenSignal
+  IxSignal.subscribeLight redirectOnAuth sessionTokenSignal
 
   -- auth token storage and clearing on site-wide driven changes
   let localstorageOnAuth mAuth = case mAuth of
-        Nothing -> clearAuthToken
-        Just authToken -> storeAuthToken authToken -- FIXME overwrites already stored value retreived on boot
-  IxSignal.subscribeDiffLight localstorageOnAuth authTokenSignal
+        Nothing -> clearSessionToken
+        Just sessionToken -> storeSessionToken sessionToken -- FIXME overwrites already stored value retreived on boot
+  IxSignal.subscribeDiffLight localstorageOnAuth sessionTokenSignal
 
 
   -- Global window size value
@@ -378,53 +382,62 @@ defaultMain
   allocateDependencies (scheme == Just (Scheme "https")) authority $ do
     dependencies dependenciesQueues deps
 
+  {sessionTokenDeltaIn,sessionTokenInitIn} <- mountSessionTokenQueues
+    sessionTokenSignal
+    (\e -> do
+        One.putQueue globalErrorQueue (GlobalErrorSessionFailure e)
+        )
+    ( do One.putQueue siteLinksQueue rootLink
+         One.putQueue globalErrorQueue $ GlobalErrorRedirect RedirectLogout
+         )
+    dependenciesQueues.sessionTokenQueues
   -- Auth Token singleton dependency mounting
-  authTokenDeltaInQueue <- writeOnly <$> One.newQueue
-  authTokenInitInQueue <- writeOnly <$> One.newQueue
-  authTokenKillificator <- One.newQueue -- hack for killing the subscription internally, yet external for this scope
+  -- sessionTokenDeltaInQueue <- writeOnly <$> One.newQueue
+  -- sessionTokenInitInQueue <- writeOnly <$> One.newQueue
+  -- sessionTokenKillificator <- One.newQueue -- hack for killing the subscription internally, yet external for this scope
 
-  let authTokenOnDeltaOut deltaOut = case deltaOut of
-        AuthTokenDeltaOutRevoked -> do
-          log "Auth token revoked"
-          IxSignal.setDiff Nothing authTokenSignal
-          -- TODO anything else needed to be cleaned up?
-      authTokenOnInitOut mInitOut = case mInitOut of
-        Nothing -> do
-          log "Auth login failure"
-          IxSignal.setDiff Nothing authTokenSignal
-          One.putQueue globalErrorQueue (GlobalErrorAuthFailure AuthLoginFailure)
-          One.putQueue authTokenKillificator unit
-        Just initOut -> case initOut of
-          AuthTokenInitOutSuccess authToken -> do
-            log $ "Auth login success: " <> show authToken
-            IxSignal.set (Just authToken) authTokenSignal
-          AuthTokenInitOutFailure e -> do
-            log $ "Auth login failure: " <> show e
-            IxSignal.set Nothing authTokenSignal
-            One.putQueue globalErrorQueue (GlobalErrorAuthFailure e)
-            One.putQueue authTokenKillificator unit
+  -- let sessionTokenOnDeltaOut deltaOut = case deltaOut of
+  --       SessionTokenDeltaOutRevoked -> do
+  --         log "Auth token revoked"
+  --         IxSignal.setDiff Nothing sessionTokenSignal
+  --         -- TODO anything else needed to be cleaned up?
+  --     sessionTokenOnInitOut mInitOut = case mInitOut of
+  --       Nothing -> do
+  --         log "Auth login failure"
+  --         IxSignal.setDiff Nothing sessionTokenSignal
+  --         One.putQueue globalErrorQueue $ GlobalErrorSessionFailure SessionTokenInternalError
+  --         One.putQueue sessionTokenKillificator unit
+  --       Just initOut -> case initOut of
+  --         SessionTokenInitOutSuccess sessionToken -> do
+  --           log $ "Auth login success: " <> show sessionToken
+  --           IxSignal.set (Just sessionToken) sessionTokenSignal
+  --         SessionTokenInitOutFailure e -> do
+  --           log $ "Auth login failure: " <> show e
+  --           IxSignal.set Nothing sessionTokenSignal
+  --           One.putQueue globalErrorQueue (GlobalErrorSessionFailure e)
+  --           One.putQueue sessionTokenKillificator unit
 
-  killAuthTokenSub <- mountSparrowClientQueuesSingleton dependenciesQueues.authTokenQueues.authTokenQueues
-    authTokenDeltaInQueue authTokenInitInQueue authTokenOnDeltaOut authTokenOnInitOut
-  One.onQueue authTokenKillificator \_ -> do
-    killAuthTokenSub -- hack applied
+  -- killSessionTokenSub <- mountSparrowClientQueuesSingleton dependenciesQueues.sessionTokenQueues.sessionTokenQueues
+  --   sessionTokenDeltaInQueue sessionTokenInitInQueue sessionTokenOnDeltaOut sessionTokenOnInitOut
+  -- One.onQueue sessionTokenKillificator \_ -> do
+  --   killSessionTokenSub -- hack applied
 
-  -- Top-level delta in issuer
-  let authTokenDeltaIn :: AuthTokenDeltaIn -> Eff (Effects eff) Unit
-      authTokenDeltaIn deltaIn = do
-        log "Sending auth delta in"
-        One.putQueue authTokenDeltaInQueue deltaIn
-        case deltaIn of
-          AuthTokenDeltaInLogout -> do
-            One.putQueue siteLinksQueue rootLink
-            One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectLogout)
-            IxSignal.setDiff Nothing authTokenSignal
-            One.putQueue authTokenKillificator unit
+  -- -- Top-level delta in issuer
+  -- let sessionTokenDeltaIn :: SessionTokenDeltaIn -> Eff (Effects eff) Unit
+  --     sessionTokenDeltaIn deltaIn = do
+  --       log "Sending auth delta in"
+  --       One.putQueue sessionTokenDeltaInQueue deltaIn
+  --       case deltaIn of
+  --         SessionTokenDeltaInLogout -> do
+  --           One.putQueue siteLinksQueue rootLink
+  --           One.putQueue globalErrorQueue (GlobalErrorRedirect RedirectLogout)
+  --           IxSignal.setDiff Nothing sessionTokenSignal
+  --           One.putQueue sessionTokenKillificator unit
 
-      authTokenInitIn :: AuthTokenInitIn -> Eff (Effects eff) Unit
-      authTokenInitIn initIn = do
-        log "Sending auth init in"
-        One.putQueue authTokenInitInQueue initIn
+  --     sessionTokenInitIn :: SessionTokenInitIn -> Eff (Effects eff) Unit
+  --     sessionTokenInitIn initIn = do
+  --       log "Sending auth init in"
+  --       One.putQueue sessionTokenInitInQueue initIn
 
   -- Auth Token singleton dependency mounting
   userDeltaInQueue <- writeOnly <$> One.newQueue
@@ -473,19 +486,19 @@ defaultMain
 
 
   -- Handle preliminary auth token
-  case preliminaryAuthToken of
+  case preliminarySessionToken of
     Nothing -> log "no preliminary token"
-    (Just (PreliminaryAuthToken eErr)) -> case eErr of
-      Right prescribedAuthToken ->
-        authTokenInitIn (AuthTokenInitInExists prescribedAuthToken)
-      Left e -> do -- FIXME ...needs timeout?
-        One.putQueue globalErrorQueue $ GlobalErrorAuthFailure e
+    (Just (PreliminarySessionToken eErr)) -> case eErr of
+      JSONRight prescribedSessionToken ->
+        sessionTokenInitIn (SessionTokenInitInExists prescribedSessionToken)
+      JSONLeft e -> do -- FIXME ...needs timeout?
+        One.putQueue globalErrorQueue $ GlobalErrorSessionFailure e
         -- try and recover even during weird init error
-        mTkn <- getStoredAuthToken
+        mTkn <- getStoredSessionToken
         case mTkn of
           Nothing -> log "no stored token either"
-          Just storedAuthToken ->
-            authTokenInitIn (AuthTokenInitInExists storedAuthToken)
+          Just storedSessionToken ->
+            sessionTokenInitIn (SessionTokenInitInExists storedSessionToken)
 
 
 
@@ -494,8 +507,8 @@ defaultMain
         log $ "fetching user deets: " <> show mAuth
         case mAuth of
           Nothing -> IxSignal.set Nothing userDetailsSignal
-          Just authToken -> userInitIn $ UserInitIn $ JSONTuple authToken JSONUnit
-  IxSignal.subscribeLight userDetailsOnAuth authTokenSignal
+          Just sessionToken -> userInitIn $ UserInitIn $ JSONTuple sessionToken JSONUnit
+  IxSignal.subscribeLight userDetailsOnAuth sessionTokenSignal
 
 
   -- universal React component params
@@ -505,7 +518,7 @@ defaultMain
         , siteLinks : One.putQueue siteLinksQueue
         , currentPageSignal
         , windowSizeSignal
-        , authTokenSignal
+        , sessionTokenSignal
         , userDetailsSignal
         , globalErrorQueue: writeOnly globalErrorQueue
         }
@@ -523,8 +536,8 @@ defaultMain
               }
             }
           , dependenciesQueues
-          , authTokenInitIn
-          , authTokenDeltaIn
+          , sessionTokenInitIn
+          , sessionTokenDeltaIn
           , userInitIn
           , userDeltaIn
           , templateArgs:
@@ -565,7 +578,7 @@ mkCurrentPageSignal :: forall eff siteLinks userDetails userDetailsLinks siteErr
                     => { w :: Window
                        , h :: History
                        , d :: HTMLDocument
-                       , authTokenSignal :: IxSignal (Effects eff) (Maybe AuthToken)
+                       , sessionTokenSignal :: IxSignal (Effects eff) (Maybe SessionToken)
                        , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
                        , initToDocumentTitle :: siteLinks -> String
                        , asyncToDocumentTitle :: One.Queue (write :: WRITE) (Effects eff) GlobalError
@@ -592,7 +605,7 @@ mkCurrentPageSignal :: forall eff siteLinks userDetails userDetailsLinks siteErr
                     -> Eff (Effects eff) (IxSignal (Effects eff) siteLinks)
 mkCurrentPageSignal
   { w,h,d
-  , authTokenSignal
+  , sessionTokenSignal
   , userDetailsSignal
   , initToDocumentTitle
   , asyncToDocumentTitle
@@ -609,7 +622,7 @@ mkCurrentPageSignal
   initSiteLink <- do
     -- initial site link, and redirects after user details loads
     (siteLink :: siteLinks) <- initSiteLinks
-    authToken <- IxSignal.get authTokenSignal
+    sessionToken <- IxSignal.get sessionTokenSignal
 
     let initPfx = initToDocumentTitle siteLink
 
@@ -629,11 +642,11 @@ mkCurrentPageSignal
   -- fetch user details' first value asynchronously, compensate for possibly erroneous
   -- initial site link, and handle the first possible redirect genuinely
   let resolveUserDetails userDetails = do
-        authToken <- IxSignal.get authTokenSignal
+        sessionToken <- IxSignal.get sessionTokenSignal
         z <- withRedirectPolicy
           { onError: pure unit
           , extraRedirect
-          , authToken
+          , sessionToken
           , userDetails
           , globalErrorQueue: writeOnly globalErrorQueue
           , siteErrorQueue: writeOnly error.queue
@@ -662,13 +675,13 @@ mkCurrentPageSignal
           runAff_ resolveEffectiveDocumentTitle (asyncToDocumentTitle globalErrorQueue x)
           IxSignal.setDiff x sig
           extraProcessing x preliminaryParams
-    authToken <- IxSignal.get authTokenSignal
+    sessionToken <- IxSignal.get sessionTokenSignal
     userDetails <- IxSignal.get userDetailsSignal
     y <- withRedirectPolicy
       { onError: replaceState' (initToDocumentTitle (rootLink :: siteLinks)) (rootLink :: siteLinks) h
                   -- okay to rely on initToDocumentTitle, because rootLink is guaranteed non-effective prefix
       , extraRedirect
-      , authToken
+      , sessionToken
       , userDetails
       , globalErrorQueue: writeOnly globalErrorQueue
       , siteErrorQueue: writeOnly error.queue
