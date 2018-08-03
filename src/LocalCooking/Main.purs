@@ -45,7 +45,6 @@ import Data.Traversable (traverse_)
 import Data.Time.Duration (Milliseconds (..))
 import Data.Argonaut.JSONUnit (JSONUnit (..))
 import Data.Argonaut.JSONTuple (JSONTuple (..))
-import Data.Argonaut.JSONEither (JSONEither (..))
 import Data.Generic (class Generic)
 import Control.Monad.Aff (ParAff, Aff, runAff_, parallel)
 import Control.Monad.Eff (Eff, kind Effect)
@@ -71,6 +70,7 @@ import DOM.HTML.Document (body)
 import DOM.HTML.Document.Extra (setDocumentTitle)
 import DOM.HTML.Types (HISTORY, htmlElementToElement, Window, HTMLDocument, History)
 
+import Signal.Types (READ, WRITE, readOnly) as S
 import IxSignal.Internal (IxSignal)
 import IxSignal.Internal (get, make, set, setDiff, subscribeLight, subscribeDiffLight) as IxSignal
 import IxSignal.Extra (onNext) as IxSignal
@@ -110,12 +110,12 @@ type Effects eff =
 
 -- | Restricted form of LocalCookingParams
 type ExtraProcessingParams siteLinks userDetails eff =
-  { siteLinks         :: siteLinks -> Eff eff Unit
-  , back              :: Eff eff Unit
-  , toURI             :: Location -> URI
-  , sessionTokenSignal   :: IxSignal eff (Maybe SessionToken)
-  , userDetailsSignal :: IxSignal eff (Maybe userDetails)
-  , globalErrorQueue  :: One.Queue (write :: WRITE) eff GlobalError
+  { siteLinks          :: siteLinks -> Eff eff Unit
+  , back               :: Eff eff Unit
+  , toURI              :: Location -> URI
+  , sessionTokenSignal :: IxSignal (read :: S.READ) eff (Maybe SessionToken)
+  , userDetailsSignal  :: IxSignal (read :: S.READ) eff (Maybe userDetails)
+  , globalErrorQueue   :: One.Queue (write :: WRITE) eff GlobalError
   }
 
 
@@ -239,11 +239,11 @@ defaultMain
     ) <- One.newQueue
 
   -- Global SessionToken value -- FIXME start as Nothing? Can't pack PreliminarySessionToken on processing?
-  ( sessionTokenSignal :: IxSignal (Effects eff) (Maybe SessionToken)
+  ( sessionTokenSignal :: IxSignal (read :: S.READ, write :: S.WRITE) (Effects eff) (Maybe SessionToken)
     ) <- IxSignal.make Nothing
 
   -- Global userDetails value -- FIXME ditto
-  ( userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
+  ( userDetailsSignal :: IxSignal (read :: S.READ, write :: S.WRITE) (Effects eff) (Maybe userDetails)
     ) <- IxSignal.make Nothing
 
   -- Fetch the preliminary auth token from `env`, or LocalStorage
@@ -261,23 +261,24 @@ defaultMain
 
   -- hack for non-recursive Eff
   preliminarySiteLinksQueue <- One.newQueue
-  let preliminaryParams =
+  let preliminaryParams :: ExtraProcessingParams siteLinks userDetails (Effects eff)
+      preliminaryParams =
         { siteLinks: One.putQueue preliminarySiteLinksQueue
         , back: back h
         , toURI: \location -> toURI {scheme, authority: Just authority, location}
-        , sessionTokenSignal
-        , userDetailsSignal
+        , sessionTokenSignal: S.readOnly sessionTokenSignal
+        , userDetailsSignal: S.readOnly userDetailsSignal
         , globalErrorQueue: writeOnly globalErrorQueue
         }
 
 
   -- Global current page value - for `back` compatibility while being driven by `siteLinksQueue` -- should be read-only
-  ( currentPageSignal :: IxSignal (Effects eff) siteLinks
+  ( currentPageSignal :: IxSignal (read :: S.READ, write :: S.WRITE) (Effects eff) siteLinks
     ) <-
     mkCurrentPageSignal
       { w,h,d
-      , sessionTokenSignal
-      , userDetailsSignal
+      , sessionTokenSignal: S.readOnly sessionTokenSignal
+      , userDetailsSignal: S.readOnly userDetailsSignal
       , initToDocumentTitle
       , asyncToDocumentTitle
       , extraProcessing
@@ -393,7 +394,6 @@ defaultMain
          )
     dependenciesQueues.sessionTokenQueues
 
-  -- Auth Token singleton dependency mounting
   userDeltaInQueue <- writeOnly <$> One.newQueue
   userInitInQueue <- writeOnly <$> One.newQueue
   -- userKillificator <- One.newQueue -- hack for killing the subscription internally, yet external for this scope
@@ -442,10 +442,11 @@ defaultMain
   -- Handle preliminary auth token
   case preliminarySessionToken of
     Nothing -> log "no preliminary token"
-    (Just tkn) -> processPreliminarySessionToken
-      sessionTokenInitIn
-      (One.putQueue globalErrorQueue <<< GlobalErrorSessionFailure)
-      tkn
+    (Just tkn) ->
+      processPreliminarySessionToken
+        sessionTokenInitIn
+        (One.putQueue globalErrorQueue <<< GlobalErrorSessionFailure)
+        tkn
 
 
 
@@ -463,10 +464,10 @@ defaultMain
       params =
         { toURI : \location -> toURI {scheme, authority: Just authority, location}
         , siteLinks : One.putQueue siteLinksQueue
-        , currentPageSignal
-        , windowSizeSignal
-        , sessionTokenSignal
-        , userDetailsSignal
+        , currentPageSignal: S.readOnly currentPageSignal
+        , windowSizeSignal: S.readOnly windowSizeSignal
+        , sessionTokenSignal: S.readOnly sessionTokenSignal
+        , userDetailsSignal: S.readOnly userDetailsSignal
         , globalErrorQueue: writeOnly globalErrorQueue
         }
 
@@ -525,8 +526,8 @@ mkCurrentPageSignal :: forall eff siteLinks userDetails userDetailsLinks siteErr
                     => { w :: Window
                        , h :: History
                        , d :: HTMLDocument
-                       , sessionTokenSignal :: IxSignal (Effects eff) (Maybe SessionToken)
-                       , userDetailsSignal :: IxSignal (Effects eff) (Maybe userDetails)
+                       , sessionTokenSignal :: IxSignal (read :: S.READ) (Effects eff) (Maybe SessionToken)
+                       , userDetailsSignal :: IxSignal (read :: S.READ) (Effects eff) (Maybe userDetails)
                        , initToDocumentTitle :: siteLinks -> String
                        , asyncToDocumentTitle :: One.Queue (write :: WRITE) (Effects eff) GlobalError
                                               -> siteLinks
@@ -549,7 +550,7 @@ mkCurrentPageSignal :: forall eff siteLinks userDetails userDetailsLinks siteErr
                          , queue :: One.Queue (read :: READ, write :: WRITE) (Effects eff) siteError
                          }
                        }
-                    -> Eff (Effects eff) (IxSignal (Effects eff) siteLinks)
+                    -> Eff (Effects eff) (IxSignal (read :: S.READ, write :: S.WRITE) (Effects eff) siteLinks)
 mkCurrentPageSignal
   { w,h,d
   , sessionTokenSignal
